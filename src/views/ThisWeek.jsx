@@ -2,7 +2,7 @@ import { Plus } from 'lucide-react'
 import { TaskCard } from '../components/TaskCard'
 import { dateUtils } from '../utils/dateUtils'
 
-export function ThisWeek({ allTasks, companies, onAdd, onComplete, onUncomplete, onEdit, onDelete }) {
+export function ThisWeek({ allTasks, companies, projects, onAdd, taskCardProps }) {
   const weekDays = dateUtils.thisWeekDays()
   const getDay = (d) => allTasks.filter(t => t.dueDate === d).sort((a,b) => {
     if (a.status === 'done' && b.status !== 'done') return 1
@@ -25,11 +25,9 @@ export function ThisWeek({ allTasks, companies, onAdd, onComplete, onUncomplete,
             <p className="text-xs text-navy-400">tasks done</p>
           </div>
         </div>
-        {/* Day dots */}
         <div className="flex gap-1">
           {weekDays.map(d => {
-            const dayT = getDay(d.date)
-            const dDone = dayT.filter(t=>t.status==='done').length
+            const dayT = getDay(d.date); const dDone = dayT.filter(t=>t.status==='done').length
             return (
               <div key={d.date} className="flex-1">
                 <div className={`text-[10px] text-center mb-1 font-medium ${d.isToday?'text-gold-600':'text-navy-400'}`}>{d.label}</div>
@@ -56,7 +54,7 @@ export function ThisWeek({ allTasks, companies, onAdd, onComplete, onUncomplete,
               </div>
               {dayTasks.length === 0
                 ? <button onClick={() => onAdd({ dueDate: d.date })} className={`w-full py-2 text-xs text-navy-400 hover:text-navy-600 border border-dashed rounded-xl transition-colors ${d.isToday?'border-gold-200 hover:border-gold-400':'border-surface-300 hover:border-surface-400'}`}>+ Add task</button>
-                : <div className="space-y-2">{dayTasks.map(t => <TaskCard key={t.id} task={t} companies={companies} onComplete={onComplete} onUncomplete={onUncomplete} onEdit={onEdit} onDelete={onDelete}/>)}</div>
+                : <div className="space-y-2">{dayTasks.map(t => <TaskCard key={t.id} task={t} {...taskCardProps} />)}</div>
               }
             </div>
           )

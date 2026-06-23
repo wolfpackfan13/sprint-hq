@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { Eye, EyeOff, Check, CloudUpload, Link, Unlink, AlertCircle } from 'lucide-react'
+import { ManageClients } from '../components/ManageClients'
 
-export function Settings({ settings, saveSettings, google, onBackup }) {
+export function Settings({ settings, saveSettings, google, onBackup, companies, onAddCompany, onUpdateCompany, onDeleteCompany }) {
   const [googleClientId, setGoogleClientId] = useState(settings.googleClientId || '')
   const [anthropicKey, setAnthropicKey] = useState(settings.anthropicKey || '')
   const [showKey, setShowKey] = useState(false)
@@ -28,6 +29,9 @@ export function Settings({ settings, saveSettings, google, onBackup }) {
           <h1 className="font-display font-bold text-navy-900 text-xl">Settings</h1>
           <p className="text-navy-500 text-sm mt-0.5">Connect Google and enable AI features</p>
         </div>
+
+        {/* Manage Clients */}
+        <ManageClients companies={companies} onAdd={onAddCompany} onUpdate={onUpdateCompany} onDelete={onDeleteCompany} />
 
         {/* Google Integration */}
         <div className="card p-5">

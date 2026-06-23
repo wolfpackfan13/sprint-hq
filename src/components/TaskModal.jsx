@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { X, Flag, Tag, Calendar, AlignLeft } from 'lucide-react'
+import { X, Flag, Tag, Calendar, AlignLeft, FolderKanban } from 'lucide-react'
 import { dateUtils } from '../utils/dateUtils'
 
 const PRIORITIES = [
@@ -14,12 +14,13 @@ const SHORTCUTS = [
   { label: 'This Fri', fn: () => { const d = new Date(); const diff = (5 - d.getDay() + 7) % 7 || 7; return dateUtils.addDays(diff) } },
 ]
 
-export function TaskModal({ task, companies = [], onSave, onClose }) {
+export function TaskModal({ task, companies = [], projects = [], onSave, onClose }) {
   const [title, setTitle] = useState(task?.title || '')
   const [notes, setNotes] = useState(task?.notes || '')
   const [dueDate, setDueDate] = useState(task?.dueDate || '')
   const [priority, setPriority] = useState(task?.priority || 'medium')
   const [companyId, setCompanyId] = useState(task?.companyId || null)
+  const [projectId, setProjectId] = useState(task?.projectId || null)
   const titleRef = useRef(null)
 
   useEffect(() => { titleRef.current?.focus() }, [])
@@ -32,9 +33,12 @@ export function TaskModal({ task, companies = [], onSave, onClose }) {
     return () => window.removeEventListener('keydown', h)
   })
 
+  // When company changes, clear project if it doesn't belong
+  const companyProjects = projects.filter(p => p.companyId === companyId && p.status === 'active')
+
   const handleSave = () => {
     if (!title.trim()) return
-    onSave({ ...(task?.id ? { id: task.id } : {}), title: title.trim(), notes: notes.trim(), dueDate: dueDate || null, priority, companyId })
+    onSave({ ...(task?.id ? { id: task.id } : {}), title: title.trim(), notes: notes.trim(), dueDate: dueDate || null, priority, companyId, projectId })
   }
 
   const isEdit = !!task?.id
@@ -42,8 +46,8 @@ export function TaskModal({ task, companies = [], onSave, onClose }) {
   return (
     <div className="fixed inset-0 bg-navy-900/50 backdrop-blur-sm flex items-end md:items-center justify-center z-50 p-0 md:p-4"
       onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="bg-white rounded-t-2xl md:rounded-2xl w-full md:max-w-lg shadow-modal">
-        <div className="flex items-center justify-between px-5 pt-5 pb-3">
+      <div className="bg-white rounded-t-2xl md:rounded-2xl w-full md:max-w-lg shadow-modal max-h-[92vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-5 pt-5 pb-3 sticky top-0 bg-white">
           <h2 className="font-display font-bold text-navy-900">{isEdit ? 'Edit Task' : 'New Task'}</h2>
           <button onClick={onClose} className="p-1.5 text-navy-400 hover:text-navy-700 rounded-lg hover:bg-surface-100"><X size={18} /></button>
         </div>
@@ -56,6 +60,37 @@ export function TaskModal({ task, companies = [], onSave, onClose }) {
               className="w-full input-base pl-9 pr-4 py-2.5 text-sm resize-none" />
           </div>
 
+          {/* Client */}
+          {companies.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold text-navy-500 uppercase tracking-wide mb-2 flex items-center gap-1.5"><Tag size={12} /> Client</p>
+              <div className="flex flex-wrap gap-2">
+                {companies.map(co => (
+                  <button key={co.id} onClick={() => { setCompanyId(companyId === co.id ? null : co.id); setProjectId(null) }}
+                    className="flex items-center gap-1 text-xs font-display font-semibold px-3 py-1.5 rounded-full border transition-all"
+                    style={companyId === co.id ? { backgroundColor: co.color, borderColor: co.color, color: '#fff' } : { backgroundColor: `${co.color}15`, borderColor: `${co.color}40`, color: co.color }}>
+                    {co.emoji} {co.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Project (only if company chosen and has projects) */}
+          {companyId && companyProjects.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold text-navy-500 uppercase tracking-wide mb-2 flex items-center gap-1.5"><FolderKanban size={12} /> Project</p>
+              <div className="flex flex-wrap gap-2">
+                {companyProjects.map(p => (
+                  <button key={p.id} onClick={() => setProjectId(projectId === p.id ? null : p.id)}
+                    className={`text-xs font-medium px-3 py-1.5 rounded-full border transition-all ${projectId === p.id ? 'bg-navy-800 border-navy-800 text-white' : 'border-surface-300 text-navy-500 hover:border-navy-400'}`}>
+                    {p.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Due date */}
           <div>
             <p className="text-xs font-semibold text-navy-500 uppercase tracking-wide mb-2 flex items-center gap-1.5"><Calendar size={12} /> Due Date</p>
@@ -66,8 +101,7 @@ export function TaskModal({ task, companies = [], onSave, onClose }) {
                   {s.label}
                 </button>
               ))}
-              <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)}
-                className="input-base px-2.5 py-1.5 text-xs" />
+              <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} className="input-base px-2.5 py-1.5 text-xs" />
               {dueDate && <button onClick={() => setDueDate('')} className="text-xs text-navy-400 hover:text-red-400">Clear</button>}
             </div>
           </div>
@@ -80,30 +114,11 @@ export function TaskModal({ task, companies = [], onSave, onClose }) {
                 <button key={p.value} onClick={() => setPriority(p.value)}
                   className={`flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border transition-all ${priority === p.value ? 'text-white' : 'border-surface-300 text-navy-500 hover:border-surface-400'}`}
                   style={priority === p.value ? { backgroundColor: p.color, borderColor: p.color } : {}}>
-                  <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: p.color }} />
-                  {p.label}
+                  <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: p.color }} />{p.label}
                 </button>
               ))}
             </div>
           </div>
-
-          {/* Company */}
-          {companies.length > 0 && (
-            <div>
-              <p className="text-xs font-semibold text-navy-500 uppercase tracking-wide mb-2 flex items-center gap-1.5"><Tag size={12} /> Client</p>
-              <div className="flex flex-wrap gap-2">
-                {companies.map(co => (
-                  <button key={co.id} onClick={() => setCompanyId(companyId === co.id ? null : co.id)}
-                    className="flex items-center gap-1 text-xs font-display font-semibold px-3 py-1.5 rounded-full border transition-all"
-                    style={companyId === co.id
-                      ? { backgroundColor: co.color, borderColor: co.color, color: '#fff' }
-                      : { backgroundColor: `${co.color}15`, borderColor: `${co.color}40`, color: co.color }}>
-                    {co.emoji} {co.name}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
 
           <div className="flex gap-3 pt-1">
             <button onClick={onClose} className="flex-1 py-3 btn-ghost text-sm">Cancel</button>
