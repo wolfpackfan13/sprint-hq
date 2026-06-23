@@ -155,7 +155,7 @@ export function Relationships({ contacts, companies, activeClient, onAdd, onUpda
         />
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-3">
+      <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-3 max-w-2xl mx-auto w-full">
         {filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-48 text-center">
             <p className="text-4xl mb-3">👥</p>

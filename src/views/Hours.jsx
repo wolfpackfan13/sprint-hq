@@ -69,7 +69,7 @@ export function Hours({ tasks, companies, projects, invoiceProfile, onSaveProfil
 
   return (
     <div className="h-full flex flex-col">
-      <div className="px-4 pt-5 pb-3 flex-shrink-0">
+      <div className="px-4 pt-5 pb-3 flex-shrink-0 max-w-3xl mx-auto w-full">
         <div className="flex items-center justify-between mb-3">
           <div>
             <h1 className="font-display font-bold text-navy-900 text-xl">Hours & Invoices</h1>
@@ -88,7 +88,7 @@ export function Hours({ tasks, companies, projects, invoiceProfile, onSaveProfil
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-3">
+      <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-3 max-w-3xl mx-auto w-full">
         {clientData.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-48 text-center">
             <Clock size={32} className="text-surface-400 mb-3" />

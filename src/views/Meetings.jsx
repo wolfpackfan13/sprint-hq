@@ -3,7 +3,7 @@ import { Plus, ChevronDown, ChevronUp, Trash2, Pencil, ArrowRight, Check, Calend
 import { dateUtils } from '../utils/dateUtils'
 
 export function Meetings({
-  meetings, companies, activeClient,
+  meetings, companies, projects = [], activeClient,
   onAddMeeting, onEditMeeting, onDeleteMeeting,
   onToggleActionItem, onPushToTask, onAddActionItem,
 }) {
@@ -50,6 +50,9 @@ export function Meetings({
                   style={{ backgroundColor: `${co.color}15`, color: co.color }}>
                   {co.emoji} {co.name}
                 </span>
+              )}
+              {m.projectId && projects.find(p => p.id === m.projectId) && (
+                <span className="text-[10px] font-medium text-navy-500">› {projects.find(p => p.id === m.projectId).name}</span>
               )}
               {m.attendees && (
                 <span className="text-xs text-navy-400 truncate">{m.attendees}</span>
@@ -168,7 +171,7 @@ export function Meetings({
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-5">
+      <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-5 max-w-2xl mx-auto w-full">
         {todayMtgs.length > 0 && (
           <section>
             <p className="text-[10px] font-bold text-gold-600 uppercase tracking-widest mb-2">Today</p>

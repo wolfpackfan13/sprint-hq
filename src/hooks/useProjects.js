@@ -17,6 +17,8 @@ export function useProjects() {
         companyId: null,
         goalId: null,
         status: 'active',   // active | done | archived
+        dueDate: null,
+        resources: [],      // [{id, label, url}]
         color: null,
         createdAt: new Date().toISOString(),
         ...data,

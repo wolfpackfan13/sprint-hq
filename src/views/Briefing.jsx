@@ -151,7 +151,7 @@ export function Briefing({ tasks, meetings, goals, vision, calendarEvents, setti
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 pb-4">
+      <div className="flex-1 overflow-y-auto px-4 pb-4 max-w-2xl mx-auto w-full">
         {!hasKey && (
           <div className="card p-5 border-gold-200 bg-gold-50 mb-4">
             <div className="flex items-start gap-3">

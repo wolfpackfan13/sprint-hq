@@ -107,7 +107,7 @@ export function Goals({ goals, vision, companies, activeClient, onAddGoal, onUpd
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-4">
+      <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-4 max-w-2xl mx-auto w-full">
         {/* Vision Statement */}
         <div className="card p-4 border-gold-200 bg-gold-50">
           <div className="flex items-start justify-between gap-2 mb-2">

@@ -147,7 +147,7 @@ export function WeeklyReview({ tasks, companies, currentWeek, sprint, onEditTask
 
   return (
     <div className="h-full flex flex-col">
-      <div className="px-4 pt-5 pb-3 flex-shrink-0">
+      <div className="px-4 pt-5 pb-3 flex-shrink-0 max-w-2xl mx-auto w-full">
         <h1 className="font-display font-bold text-navy-900 text-xl">Weekly Review</h1>
         <p className="text-navy-500 text-sm mt-0.5">{dateUtils.format(weekStart, 'short')} — {dateUtils.format(weekEnd, 'short')}</p>
         {/* Step dots */}
@@ -158,7 +158,7 @@ export function WeeklyReview({ tasks, companies, currentWeek, sprint, onEditTask
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 pb-4">
+      <div className="flex-1 overflow-y-auto px-4 pb-4 max-w-2xl mx-auto w-full">
         <div className="flex items-center gap-2 mb-4">
           <div className="w-8 h-8 rounded-lg bg-gold-100 flex items-center justify-center"><Icon size={16} className="text-gold-600" /></div>
           <h2 className="font-display font-bold text-navy-800">{currentStep.title}</h2>

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Check, Trash2, Pencil, ChevronDown, ChevronUp, Clock, RotateCcw, Play, Pause, Sparkles, Star, ListChecks } from 'lucide-react'
 import { dateUtils } from '../utils/dateUtils'
 import { timeUtils } from '../utils/timeUtils'
+import { ResourceLinks } from './ResourceLinks'
 
 const PRIORITY_DOT = { high: '#EF4444', medium: '#F4A825', low: '#9BA5BB' }
 
@@ -113,7 +114,7 @@ export function TaskCard({
               </button>
             )}
 
-            {(task.notes || subtasks.length > 0) && (
+            {(task.notes || subtasks.length > 0 || (task.resources||[]).length > 0) && (
               <button onClick={() => setExpanded(e => !e)} className="ml-auto p-0.5 text-navy-400 hover:text-navy-700">
                 {expanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
               </button>
@@ -137,6 +138,7 @@ export function TaskCard({
                 </div>
               )}
               {task.notes && <p className="text-xs text-navy-500 leading-relaxed">{task.notes}</p>}
+              {(task.resources||[]).length > 0 && <ResourceLinks resources={task.resources} />}
             </div>
           )}
         </div>

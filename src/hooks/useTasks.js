@@ -23,7 +23,8 @@ export function useTasks() {
         status: 'todo',
         isTop3: data.isTop3 || false,
         subtasks: data.subtasks || [],        // [{id, title, done}]
-        timeEntries: data.timeEntries || [],  // [{start, end, seconds}]
+        timeEntries: data.timeEntries || [],  // [{id, start, end, seconds, manual, note}]
+        resources: data.resources || [],      // [{id, label, url}]
         createdAt: new Date().toISOString(),
         completedAt: null,
       }
@@ -78,9 +79,37 @@ export function useTasks() {
     if (!seconds || seconds < 1) return
     setTasks(prev => persist(prev.map(t => {
       if (t.id !== id) return t
-      const entry = { start: new Date(Date.now() - seconds*1000).toISOString(), end: new Date().toISOString(), seconds }
+      const entry = { id: `te_${Date.now()}`, start: new Date(Date.now() - seconds*1000).toISOString(), end: new Date().toISOString(), seconds }
       return { ...t, timeEntries: [...(t.timeEntries||[]), entry] }
     })))
+  }, [])
+
+  const addManualTimeEntry = useCallback((id, seconds, dateStr, note='') => {
+    if (!seconds || seconds < 1) return
+    setTasks(prev => persist(prev.map(t => {
+      if (t.id !== id) return t
+      const when = dateStr ? new Date(dateStr + 'T12:00:00').toISOString() : new Date().toISOString()
+      const entry = { id: `te_${Date.now()}`, start: when, end: when, seconds, manual: true, note }
+      return { ...t, timeEntries: [...(t.timeEntries||[]), entry] }
+    })))
+  }, [])
+
+  const updateTimeEntry = useCallback((taskId, entryId, seconds) => {
+    setTasks(prev => persist(prev.map(t => {
+      if (t.id !== taskId) return t
+      return { ...t, timeEntries: (t.timeEntries||[]).map(e => e.id === entryId ? { ...e, seconds } : e) }
+    })))
+  }, [])
+
+  const deleteTimeEntry = useCallback((taskId, entryId) => {
+    setTasks(prev => persist(prev.map(t => {
+      if (t.id !== taskId) return t
+      return { ...t, timeEntries: (t.timeEntries||[]).filter(e => e.id !== entryId) }
+    })))
+  }, [])
+
+  const setResources = useCallback((id, resources) => {
+    setTasks(prev => persist(prev.map(t => t.id === id ? { ...t, resources } : t)))
   }, [])
 
   const saveTask = useCallback((data) => {
@@ -119,6 +148,6 @@ export function useTasks() {
     completedToday,
     tasksForProject,
     addTask, updateTask, deleteTask, completeTask, uncompleteTask, saveTask,
-    toggleTop3, setSubtasks, toggleSubtask, addTimeEntry,
+    toggleTop3, setSubtasks, toggleSubtask, addTimeEntry, addManualTimeEntry, updateTimeEntry, deleteTimeEntry, setResources,
   }
 }

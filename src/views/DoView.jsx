@@ -30,7 +30,7 @@ export function DoView({
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
-      <div className="px-4 pt-5 pb-3 flex-shrink-0">
+      <div className="px-4 pt-5 pb-3 flex-shrink-0 max-w-2xl mx-auto w-full">
         <div className="flex items-start justify-between mb-3">
           <div>
             <h1 className="font-display font-bold text-navy-900 text-xl">Today</h1>
@@ -54,7 +54,7 @@ export function DoView({
         </form>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-5">
+      <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-5 max-w-2xl mx-auto w-full">
         {/* MISSED triage banner */}
         {missedTodo.length > 0 && (
           <div className="card border-red-200 bg-red-50 overflow-hidden">

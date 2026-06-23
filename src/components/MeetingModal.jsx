@@ -2,12 +2,13 @@ import { useState, useEffect, useRef } from 'react'
 import { X, Plus, Trash2, ArrowRight, Calendar, Users, Tag, AlignLeft } from 'lucide-react'
 import { dateUtils } from '../utils/dateUtils'
 
-export function MeetingModal({ meeting, companies, onSave, onClose }) {
+export function MeetingModal({ meeting, companies, projects = [], onSave, onClose }) {
   const [title, setTitle] = useState(meeting?.title || '')
   const [date, setDate] = useState(meeting?.date || dateUtils.today())
   const [time, setTime] = useState(meeting?.time || '')
   const [attendees, setAttendees] = useState(meeting?.attendees || '')
   const [companyId, setCompanyId] = useState(meeting?.companyId || null)
+  const [projectId, setProjectId] = useState(meeting?.projectId || null)
   const [notes, setNotes] = useState(meeting?.notes || '')
   const [actionItems, setActionItems] = useState(meeting?.actionItems || [])
   const [newActionItem, setNewActionItem] = useState('')
@@ -40,6 +41,7 @@ export function MeetingModal({ meeting, companies, onSave, onClose }) {
       time,
       attendees,
       companyId,
+      projectId,
       notes: notes.trim(),
       actionItems,
     })
@@ -128,6 +130,24 @@ export function MeetingModal({ meeting, companies, onSave, onClose }) {
               ))}
             </div>
           </div>
+
+          {/* Project */}
+          {companyId && projects.filter(p => p.companyId === companyId && p.status === 'active').length > 0 && (
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <Tag size={13} className="text-navy-400" />
+                <span className="text-xs font-medium text-navy-500 uppercase tracking-wide">Project</span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {projects.filter(p => p.companyId === companyId && p.status === 'active').map(p => (
+                  <button key={p.id} onClick={() => setProjectId(projectId === p.id ? null : p.id)}
+                    className={`text-xs font-medium px-3 py-1.5 rounded-full border transition-all ${projectId === p.id ? 'bg-navy-800 border-navy-800 text-white' : 'border-surface-300 text-navy-500 hover:border-navy-400'}`}>
+                    {p.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Notes */}
           <div className="relative">

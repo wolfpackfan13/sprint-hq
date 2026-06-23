@@ -17,7 +17,7 @@ export function Notes({ notes, onAdd, onDelete, onTogglePin }) {
 
   return (
     <div className="h-full flex flex-col">
-      <div className="px-4 pt-5 pb-3 flex-shrink-0">
+      <div className="px-4 pt-5 pb-3 flex-shrink-0 max-w-2xl mx-auto w-full">
         <h1 className="font-display font-bold text-navy-900 text-xl">Notes</h1>
         <p className="text-navy-500 text-sm mt-0.5">Brain dump — capture anything</p>
       </div>
@@ -38,7 +38,7 @@ export function Notes({ notes, onAdd, onDelete, onTogglePin }) {
           </div>
         </form>
       </div>
-      <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-4">
+      <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-4 max-w-2xl mx-auto w-full">
         {notes.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-40 text-center">
             <FileText size={28} className="text-surface-400 mb-3"/>

@@ -1,6 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
-import { X, Flag, Tag, Calendar, AlignLeft, FolderKanban } from 'lucide-react'
+import { X, Flag, Tag, Calendar, AlignLeft, FolderKanban, ListChecks, Link2, Sparkles } from 'lucide-react'
 import { dateUtils } from '../utils/dateUtils'
+import { SubtaskEditor } from './SubtaskEditor'
+import { ResourceLinks } from './ResourceLinks'
+import { TimeLogEditor } from './TimeLogEditor'
 
 const PRIORITIES = [
   { value: 'high', label: 'High', color: '#EF4444' },
@@ -14,14 +17,20 @@ const SHORTCUTS = [
   { label: 'This Fri', fn: () => { const d = new Date(); const diff = (5 - d.getDay() + 7) % 7 || 7; return dateUtils.addDays(diff) } },
 ]
 
-export function TaskModal({ task, companies = [], projects = [], onSave, onClose }) {
+export function TaskModal({
+  task, companies = [], projects = [], onSave, onClose,
+  onBreakdown, timeHandlers,
+}) {
   const [title, setTitle] = useState(task?.title || '')
   const [notes, setNotes] = useState(task?.notes || '')
   const [dueDate, setDueDate] = useState(task?.dueDate || '')
   const [priority, setPriority] = useState(task?.priority || 'medium')
   const [companyId, setCompanyId] = useState(task?.companyId || null)
   const [projectId, setProjectId] = useState(task?.projectId || null)
+  const [subtasks, setSubtasksState] = useState(task?.subtasks || [])
+  const [resources, setResourcesState] = useState(task?.resources || [])
   const titleRef = useRef(null)
+  const isEdit = !!task?.id
 
   useEffect(() => { titleRef.current?.focus() }, [])
   useEffect(() => {
@@ -33,21 +42,18 @@ export function TaskModal({ task, companies = [], projects = [], onSave, onClose
     return () => window.removeEventListener('keydown', h)
   })
 
-  // When company changes, clear project if it doesn't belong
   const companyProjects = projects.filter(p => p.companyId === companyId && p.status === 'active')
 
   const handleSave = () => {
     if (!title.trim()) return
-    onSave({ ...(task?.id ? { id: task.id } : {}), title: title.trim(), notes: notes.trim(), dueDate: dueDate || null, priority, companyId, projectId })
+    onSave({ ...(task?.id ? { id: task.id } : {}), title: title.trim(), notes: notes.trim(), dueDate: dueDate || null, priority, companyId, projectId, subtasks, resources })
   }
-
-  const isEdit = !!task?.id
 
   return (
     <div className="fixed inset-0 bg-navy-900/50 backdrop-blur-sm flex items-end md:items-center justify-center z-50 p-0 md:p-4"
       onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="bg-white rounded-t-2xl md:rounded-2xl w-full md:max-w-lg shadow-modal max-h-[92vh] overflow-y-auto">
-        <div className="flex items-center justify-between px-5 pt-5 pb-3 sticky top-0 bg-white">
+        <div className="flex items-center justify-between px-5 pt-5 pb-3 sticky top-0 bg-white z-10">
           <h2 className="font-display font-bold text-navy-900">{isEdit ? 'Edit Task' : 'New Task'}</h2>
           <button onClick={onClose} className="p-1.5 text-navy-400 hover:text-navy-700 rounded-lg hover:bg-surface-100"><X size={18} /></button>
         </div>
@@ -76,7 +82,7 @@ export function TaskModal({ task, companies = [], projects = [], onSave, onClose
             </div>
           )}
 
-          {/* Project (only if company chosen and has projects) */}
+          {/* Project */}
           {companyId && companyProjects.length > 0 && (
             <div>
               <p className="text-xs font-semibold text-navy-500 uppercase tracking-wide mb-2 flex items-center gap-1.5"><FolderKanban size={12} /> Project</p>
@@ -119,6 +125,37 @@ export function TaskModal({ task, companies = [], projects = [], onSave, onClose
               ))}
             </div>
           </div>
+
+          {/* Subtasks */}
+          <div className="border-t border-surface-200 pt-4">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs font-semibold text-navy-500 uppercase tracking-wide flex items-center gap-1.5"><ListChecks size={12} /> Subtasks</p>
+              {onBreakdown && title.trim() && (
+                <button onClick={() => onBreakdown({ id: task?.id, title: title.trim(), notes })} className="flex items-center gap-1 text-xs text-gold-600 hover:text-gold-700">
+                  <Sparkles size={11} /> AI break down
+                </button>
+              )}
+            </div>
+            <SubtaskEditor subtasks={subtasks} onChange={setSubtasksState} />
+          </div>
+
+          {/* Resources */}
+          <div className="border-t border-surface-200 pt-4">
+            <p className="text-xs font-semibold text-navy-500 uppercase tracking-wide mb-2 flex items-center gap-1.5"><Link2 size={12} /> Links & Resources</p>
+            <ResourceLinks resources={resources} onChange={setResourcesState} />
+          </div>
+
+          {/* Time log — only when editing existing task */}
+          {isEdit && timeHandlers && (
+            <div className="border-t border-surface-200 pt-4">
+              <TimeLogEditor
+                timeEntries={task.timeEntries || []}
+                onAdd={(secs, date) => timeHandlers.add(task.id, secs, date)}
+                onUpdate={(eid, secs) => timeHandlers.update(task.id, eid, secs)}
+                onDelete={(eid) => timeHandlers.remove(task.id, eid)}
+              />
+            </div>
+          )}
 
           <div className="flex gap-3 pt-1">
             <button onClick={onClose} className="flex-1 py-3 btn-ghost text-sm">Cancel</button>
