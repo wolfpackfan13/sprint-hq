@@ -2,131 +2,62 @@ import { Plus } from 'lucide-react'
 import { TaskCard } from '../components/TaskCard'
 import { dateUtils } from '../utils/dateUtils'
 
-export function ThisWeek({ tasks, allTasks, onAdd, onComplete, onUncomplete, onEdit, onDelete }) {
+export function ThisWeek({ allTasks, companies, onAdd, onComplete, onUncomplete, onEdit, onDelete }) {
   const weekDays = dateUtils.thisWeekDays()
-
-  const getTasksForDate = (dateStr) =>
-    allTasks.filter(t => t.dueDate === dateStr)
-
-  const totalTodo = allTasks.filter(t => t.status === 'todo').length
-  const totalDone = allTasks.filter(t => t.status === 'done').length
+  const getDay = (d) => allTasks.filter(t => t.dueDate === d).sort((a,b) => {
+    if (a.status === 'done' && b.status !== 'done') return 1
+    if (a.status !== 'done' && b.status === 'done') return -1
+    const o = { high:0,medium:1,low:2 }; return (o[a.priority]??1)-(o[b.priority]??1)
+  })
+  const total = allTasks.length
+  const done = allTasks.filter(t => t.status === 'done').length
 
   return (
     <div className="h-full flex flex-col">
-      {/* Header */}
-      <div className="px-5 pt-5 pb-4 flex-shrink-0">
-        <div className="flex items-start justify-between">
+      <div className="px-4 pt-5 pb-3 flex-shrink-0">
+        <div className="flex items-start justify-between mb-3">
           <div>
-            <h1 className="font-display font-bold text-white text-xl">This Week</h1>
-            <p className="text-navy-400 text-sm mt-0.5">
-              {dateUtils.format(weekDays[0].date, 'short')} — {dateUtils.format(weekDays[6].date, 'short')}
-            </p>
+            <h1 className="font-display font-bold text-navy-900 text-xl">This Week</h1>
+            <p className="text-navy-500 text-sm">{dateUtils.format(weekDays[0].date,'short')} — {dateUtils.format(weekDays[6].date,'short')}</p>
           </div>
           <div className="text-right">
-            <p className="text-sm font-display font-semibold text-white">
-              {totalDone}/{totalDone + totalTodo}
-            </p>
-            <p className="text-xs text-navy-400 mt-0.5">tasks done</p>
+            <p className="font-display font-bold text-navy-900 text-sm">{done}/{total}</p>
+            <p className="text-xs text-navy-400">tasks done</p>
           </div>
         </div>
-
-        {/* Week progress mini bar */}
-        <div className="flex gap-1 mt-3">
-          {weekDays.map(day => {
-            const dayTasks = getTasksForDate(day.date)
-            const done = dayTasks.filter(t => t.status === 'done').length
-            const total = dayTasks.length
+        {/* Day dots */}
+        <div className="flex gap-1">
+          {weekDays.map(d => {
+            const dayT = getDay(d.date)
+            const dDone = dayT.filter(t=>t.status==='done').length
             return (
-              <div key={day.date} className="flex-1">
-                <div
-                  className={`text-[10px] text-center mb-1 font-medium ${
-                    day.isToday ? 'text-gold-500' : 'text-navy-500'
-                  }`}
-                >
-                  {day.label}
+              <div key={d.date} className="flex-1">
+                <div className={`text-[10px] text-center mb-1 font-medium ${d.isToday?'text-gold-600':'text-navy-400'}`}>{d.label}</div>
+                <div className={`h-1 rounded-full ${d.isToday?'bg-gold-200':'bg-surface-300'}`}>
+                  {dayT.length>0&&<div className="h-full rounded-full bg-forest-400 transition-all" style={{width:`${(dDone/dayT.length)*100}%`}}/>}
                 </div>
-                <div className={`h-1 rounded-full ${
-                  day.isToday ? 'bg-gold-500/30' : 'bg-navy-700'
-                }`}>
-                  {total > 0 && (
-                    <div
-                      className="h-full rounded-full bg-forest-400"
-                      style={{ width: `${(done / total) * 100}%` }}
-                    />
-                  )}
-                </div>
-                {total > 0 && (
-                  <div className="text-[9px] text-center mt-0.5 text-navy-500">{total}</div>
-                )}
               </div>
             )
           })}
         </div>
       </div>
-
-      {/* Task list grouped by day */}
-      <div className="flex-1 overflow-y-auto px-5 pb-4 space-y-5">
-        {weekDays.map(day => {
-          const dayTasks = getTasksForDate(day.date)
-          const sortedTasks = [...dayTasks].sort((a, b) => {
-            if (a.status === 'done' && b.status !== 'done') return 1
-            if (a.status !== 'done' && b.status === 'done') return -1
-            const order = { high: 0, medium: 1, low: 2 }
-            return (order[a.priority] ?? 1) - (order[b.priority] ?? 1)
-          })
-
+      <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-5">
+        {weekDays.map(d => {
+          const dayTasks = getDay(d.date)
           return (
-            <div key={day.date}>
-              {/* Day header */}
+            <div key={d.date}>
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
-                  <span className={`text-xs font-display font-semibold uppercase tracking-wide ${
-                    day.isToday ? 'text-gold-500' : 'text-navy-400'
-                  }`}>
-                    {day.isToday ? 'Today' : day.label}
-                  </span>
-                  <span className="text-xs text-navy-600">
-                    {dateUtils.format(day.date, 'short')}
-                  </span>
-                  {day.isToday && (
-                    <span className="text-[10px] bg-gold-500 text-navy-900 px-1.5 py-0.5 rounded-full font-bold">
-                      NOW
-                    </span>
-                  )}
+                  <span className={`text-xs font-display font-bold uppercase tracking-wide ${d.isToday?'text-gold-600':'text-navy-400'}`}>{d.isToday?'Today':d.label}</span>
+                  <span className="text-xs text-navy-400">{dateUtils.format(d.date,'short')}</span>
+                  {d.isToday && <span className="text-[9px] bg-gold-100 text-gold-700 px-1.5 py-0.5 rounded-full font-bold">NOW</span>}
                 </div>
-                <button
-                  onClick={() => onAdd({ dueDate: day.date })}
-                  className="p-1 text-navy-600 hover:text-gold-500 transition-colors"
-                  aria-label={`Add task for ${day.label}`}
-                >
-                  <Plus size={14} />
-                </button>
+                <button onClick={() => onAdd({ dueDate: d.date })} className="p-1 text-navy-400 hover:text-gold-600"><Plus size={14}/></button>
               </div>
-
-              {sortedTasks.length === 0 ? (
-                <button
-                  onClick={() => onAdd({ dueDate: day.date })}
-                  className={`w-full py-2 text-xs text-navy-600 hover:text-navy-400 border border-dashed rounded-xl transition-colors text-center ${
-                    day.isToday ? 'border-gold-900 hover:border-gold-700' : 'border-navy-800 hover:border-navy-600'
-                  }`}
-                >
-                  + Add task
-                </button>
-              ) : (
-                <div className="space-y-2">
-                  {sortedTasks.map(task => (
-                    <TaskCard
-                      key={task.id}
-                      task={task}
-                      onComplete={onComplete}
-                      onUncomplete={onUncomplete}
-                      onEdit={onEdit}
-                      onDelete={onDelete}
-                      showDate={false}
-                    />
-                  ))}
-                </div>
-              )}
+              {dayTasks.length === 0
+                ? <button onClick={() => onAdd({ dueDate: d.date })} className={`w-full py-2 text-xs text-navy-400 hover:text-navy-600 border border-dashed rounded-xl transition-colors ${d.isToday?'border-gold-200 hover:border-gold-400':'border-surface-300 hover:border-surface-400'}`}>+ Add task</button>
+                : <div className="space-y-2">{dayTasks.map(t => <TaskCard key={t.id} task={t} companies={companies} onComplete={onComplete} onUncomplete={onUncomplete} onEdit={onEdit} onDelete={onDelete}/>)}</div>
+              }
             </div>
           )
         })}
