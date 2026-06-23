@@ -1,0 +1,80 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  html, body, #root {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    background-color: #0E1320;
+    color: #E8EDFF;
+    font-family: 'Inter', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* iOS safe area padding */
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  /* Scrollbar styling */
+  ::-webkit-scrollbar {
+    width: 4px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #2D3C57;
+    border-radius: 2px;
+  }
+
+  /* Input autofill override */
+  input:-webkit-autofill,
+  input:-webkit-autofill:hover,
+  input:-webkit-autofill:focus {
+    -webkit-text-fill-color: #E8EDFF;
+    -webkit-box-shadow: 0 0 0px 1000px #1A2338 inset;
+    transition: background-color 5000s ease-in-out 0s;
+  }
+}
+
+@layer components {
+  .font-display {
+    font-family: 'Space Grotesk', system-ui, sans-serif;
+  }
+
+  /* Gold progress glow effect */
+  .progress-glow {
+    box-shadow: 0 0 12px rgba(244, 168, 37, 0.4),
+                0 0 24px rgba(244, 168, 37, 0.15);
+  }
+
+  /* Task checkbox animation */
+  .task-check {
+    transition: all 0.15s ease;
+  }
+
+  .task-check:hover {
+    transform: scale(1.1);
+  }
+
+  /* Subtle card hover */
+  .card-hover {
+    transition: background-color 0.15s ease, border-color 0.15s ease;
+  }
+
+  .card-hover:hover {
+    background-color: #1A2338;
+    border-color: #2D3C57;
+  }
+}
