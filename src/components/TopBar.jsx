@@ -1,16 +1,19 @@
 import { useState } from 'react'
-import { Sparkles, ChevronDown, Check, Pencil, Plus, CheckSquare, FolderKanban, Clipboard } from 'lucide-react'
+import { Sparkles, ChevronDown, Check, Pencil, Plus, CheckSquare, FolderKanban, Clipboard, LogOut } from 'lucide-react'
+import { SyncIndicator } from './SyncIndicator'
 
 export function TopBar({
   sprint, currentWeek, progress, vision, onSaveVision, onEditSprint,
   companies, activeClient, onSelectClient,
   onNewTask, onNewProject, onNewMeeting, onBriefing,
+  syncStatus, lastSynced, userEmail, onSignOut,
 }) {
   const [whyOpen, setWhyOpen] = useState(false)
   const [editingWhy, setEditingWhy] = useState(false)
   const [draft, setDraft] = useState(vision)
   const [clientOpen, setClientOpen] = useState(false)
   const [addOpen, setAddOpen] = useState(false)
+  const [acctOpen, setAcctOpen] = useState(false)
 
   const pct = sprint ? Math.round(progress * 100) : 0
   const activeCo = companies.find(c => c.id === activeClient)
@@ -65,6 +68,30 @@ export function TopBar({
           <Sparkles size={13} className="text-gold-500" />
           <span className="font-display font-semibold hidden md:inline">Briefing</span>
         </button>
+
+        {/* Sync status */}
+        <SyncIndicator status={syncStatus} lastSynced={lastSynced} />
+
+        {/* Account menu */}
+        <div className="relative flex-shrink-0">
+          <button onClick={() => setAcctOpen(o => !o)} className="w-7 h-7 rounded-full bg-navy-800 text-white flex items-center justify-center text-xs font-display font-bold hover:bg-navy-700 transition-colors">
+            {(userEmail || '?')[0].toUpperCase()}
+          </button>
+          {acctOpen && (
+            <>
+              <div className="fixed inset-0 z-30" onClick={() => setAcctOpen(false)} />
+              <div className="absolute right-0 top-full mt-1 bg-white border border-surface-300 rounded-xl shadow-modal py-1 z-40 min-w-[200px]">
+                <div className="px-3 py-2 border-b border-surface-200">
+                  <p className="text-[11px] text-navy-400">Signed in as</p>
+                  <p className="text-xs text-navy-700 font-medium truncate">{userEmail}</p>
+                </div>
+                <button onClick={() => { onSignOut(); setAcctOpen(false) }} className="w-full flex items-center gap-2 px-3 py-2 text-sm text-navy-700 hover:bg-surface-100">
+                  <LogOut size={14} /> Sign Out
+                </button>
+              </div>
+            </>
+          )}
+        </div>
 
         {/* Client filter */}
         <div className="relative flex-shrink-0">

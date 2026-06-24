@@ -37,8 +37,11 @@ import { SprintView } from './views/SprintView'
 import { Settings } from './views/Settings'
 import { Archive } from './views/Archive'
 import { PrepDay } from './views/PrepDay'
+import { useSync } from './hooks/useSync'
+import { Login } from './components/Login'
+import { SyncIndicator } from './components/SyncIndicator'
 
-export default function App() {
+function AppMain({ sync }) {
   const [activeView, setActiveView] = useState('do')
   const [activeClient, setActiveClient] = useState(null)
   const [taskModal, setTaskModal] = useState({ open: false, task: null })
@@ -161,6 +164,13 @@ export default function App() {
     return () => window.removeEventListener('keydown', handler)
   }, [taskModal.open, meetingModal.open, projectModal.open, breakdownModal.open, activeView, openAddTask])
 
+  // ── Cloud sync: queue a push whenever local data changes ──
+  useEffect(() => {
+    const onChange = () => sync.queueSync()
+    window.addEventListener('sprintHQ:changed', onChange)
+    return () => window.removeEventListener('sprintHQ:changed', onChange)
+  }, [sync])
+
   // ── First run: if no sprint, force the Sprint view which now has inline setup ──
   const effectiveView = !sprint ? 'sprint' : activeView
 
@@ -219,7 +229,8 @@ export default function App() {
         <TopBar sprint={sprint} currentWeek={currentWeek} progress={progress} vision={vision} onSaveVision={saveVision}
           onEditSprint={() => setActiveView('sprint')} companies={companies} activeClient={activeClient} onSelectClient={setActiveClient}
           onNewTask={() => openAddTask({ dueDate: new Date().toISOString().split('T')[0] })} onNewProject={() => openAddProject({ companyId: activeClient })}
-          onNewMeeting={() => setMeetingModal({ open: true, meeting: {} })} onBriefing={() => setActiveView('briefing')} />
+          onNewMeeting={() => setMeetingModal({ open: true, meeting: {} })} onBriefing={() => setActiveView('briefing')}
+          syncStatus={sync.syncStatus} lastSynced={sync.lastSynced} userEmail={sync.userEmail} onSignOut={sync.signOut} />
         <div className="flex-1 overflow-hidden pb-14 md:pb-0">{renderView()}</div>
       </div>
       <MobileNav activeView={effectiveView} setActiveView={setActiveView} missedCount={missedCount} />
@@ -231,4 +242,34 @@ export default function App() {
       <CelebrationBurst active={celebration} onDone={() => setCelebration(false)} />
     </div>
   )
+}
+
+// ── Auth gate wrapper ──
+// Handles login + waits for the first cloud pull before mounting the app,
+// so data hooks read synced data (not stale local data) on a fresh device.
+export default function App() {
+  const sync = useSync()
+
+  if (sync.authLoading) {
+    return (
+      <div className="min-h-screen bg-surface-100 flex items-center justify-center">
+        <div className="w-8 h-8 rounded-full border-2 border-gold-300 border-t-gold-600 animate-spin" />
+      </div>
+    )
+  }
+
+  if (!sync.isAuthed) {
+    return <Login onSignIn={sync.signIn} authLoading={sync.authLoading} />
+  }
+
+  if (!sync.initialLoadDone) {
+    return (
+      <div className="min-h-screen bg-surface-100 flex flex-col items-center justify-center gap-3">
+        <div className="w-8 h-8 rounded-full border-2 border-gold-300 border-t-gold-600 animate-spin" />
+        <p className="text-sm text-navy-500 font-display">Loading your data...</p>
+      </div>
+    )
+  }
+
+  return <AppMain sync={sync} />
 }

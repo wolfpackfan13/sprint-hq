@@ -1,3 +1,14 @@
+// Local-first storage. Every write also emits a 'sprintHQ:changed' event
+// so the sync layer can push to the cloud (debounced).
+
+function emitChange(key) {
+  try {
+    window.dispatchEvent(new CustomEvent('sprintHQ:changed', { detail: { key } }))
+  } catch {
+    // window may not exist in some environments; ignore
+  }
+}
+
 export const storage = {
   get(key, defaultValue = null) {
     try {
@@ -11,6 +22,7 @@ export const storage = {
   set(key, value) {
     try {
       localStorage.setItem(`sprintHQ_${key}`, JSON.stringify(value))
+      emitChange(key)
       return true
     } catch {
       return false
@@ -20,6 +32,7 @@ export const storage = {
   remove(key) {
     try {
       localStorage.removeItem(`sprintHQ_${key}`)
+      emitChange(key)
       return true
     } catch {
       return false
