@@ -38,6 +38,8 @@ import { Settings } from './views/Settings'
 import { Archive } from './views/Archive'
 import { PrepDay } from './views/PrepDay'
 import { Calendar } from './views/Calendar'
+import { Clients } from './views/Clients'
+import { ClientCockpit } from './views/ClientCockpit'
 import { useSync } from './hooks/useSync'
 import { Login } from './components/Login'
 import { SyncIndicator } from './components/SyncIndicator'
@@ -52,6 +54,7 @@ function AppMain({ sync }) {
   const [celebration, setCelebration] = useState(false)
   const [toast, setToast] = useState(null)
   const [eventNotes, setEventNotes] = useState(() => storage.get('eventNotes', {}))
+  const [cockpitClient, setCockpitClient] = useState(null)
 
   const {
     tasks, todayTasks, allThisWeekTasks, missedTasks, top3Tasks, completedToday,
@@ -220,6 +223,20 @@ function AppMain({ sync }) {
         return <Notes notes={notes} onAdd={addNote} onDelete={deleteNote} onTogglePin={togglePin} />
       case 'sprint':
         return <SprintView sprint={sprint} currentWeek={currentWeek} progress={progress} tasks={tasks} onSaveSprint={saveSprint} onUpdateWeekGoal={updateWeekGoal} onUpdateGoal={updateSprintGoal} onReset={resetSprint} />
+      case 'clients':
+        if (cockpitClient) {
+          return <ClientCockpit
+            company={cockpitClient}
+            tasks={tasks} projects={projects} meetings={meetings}
+            companies={companies} allProjects={projects}
+            onBack={() => setCockpitClient(null)}
+            onAddTask={openAddTask} onAddProject={openAddProject}
+            onAddMeeting={(d) => setMeetingModal({ open: true, meeting: d || {} })}
+            onOpenProject={() => { setCockpitClient(null); setActiveView('projects') }}
+            taskCardProps={taskCardProps}
+          />
+        }
+        return <Clients companies={companies} tasks={tasks} projects={projects} meetings={meetings} onOpenClient={(c) => setCockpitClient(c)} />
       case 'calendar':
         return <Calendar google={google} companies={companies} projects={activeProjects} settings={settings} onCreateTask={(t) => saveTask(t)} eventNotes={eventNotes} onSaveEventNote={saveEventNote} onOpenSettings={() => setActiveView('settings')} />
       case 'prep':
