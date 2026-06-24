@@ -30,9 +30,27 @@ export function useGoogle(settings, saveGoogleToken, clearGoogleToken) {
   }, [settings.googleClientId, saveGoogleToken, clearGoogleToken])
 
   const connect = useCallback(() => {
-    const client = initTokenClient()
-    if (client) client.requestAccessToken()
-  }, [initTokenClient])
+    // Guard 1: Client ID must be present
+    if (!settings.googleClientId) {
+      alert('Paste your Google Client ID and click "Save Settings" first, then Connect.')
+      return
+    }
+    // Guard 2: Google script must be loaded
+    if (!window.google?.accounts?.oauth2) {
+      alert('Google sign-in is still loading. Wait a few seconds and try again. If this keeps happening, refresh the page.')
+      return
+    }
+    try {
+      const client = initTokenClient()
+      if (client) {
+        client.requestAccessToken()
+      } else {
+        alert('Could not start Google sign-in. Make sure your Client ID is saved and correct.')
+      }
+    } catch (err) {
+      alert('Google sign-in error: ' + err.message)
+    }
+  }, [settings.googleClientId, initTokenClient])
 
   const disconnect = useCallback(() => {
     if (window.google?.accounts?.oauth2 && settings.googleToken) {

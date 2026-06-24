@@ -72,7 +72,12 @@ export function Settings({ settings, saveSettings, google, onBackup, companies, 
                   <Unlink size={14} /> Disconnect Google
                 </button>
               ) : (
-                <button onClick={google.connect}
+                <button onClick={() => {
+                  // Save the Client ID first, then connect — avoids the silent-fail
+                  // where connect reads the saved value but the input wasn't saved yet.
+                  saveSettings({ googleClientId, anthropicKey })
+                  setTimeout(() => google.connect(), 150)
+                }}
                   className="flex items-center gap-2 px-4 py-2 text-sm btn-primary">
                   <Link size={14} /> Connect Google
                 </button>
