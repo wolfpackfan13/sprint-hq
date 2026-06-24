@@ -37,6 +37,7 @@ import { SprintView } from './views/SprintView'
 import { Settings } from './views/Settings'
 import { Archive } from './views/Archive'
 import { PrepDay } from './views/PrepDay'
+import { Calendar } from './views/Calendar'
 import { useSync } from './hooks/useSync'
 import { Login } from './components/Login'
 import { SyncIndicator } from './components/SyncIndicator'
@@ -50,6 +51,7 @@ function AppMain({ sync }) {
   const [breakdownModal, setBreakdownModal] = useState({ open: false, task: null })
   const [celebration, setCelebration] = useState(false)
   const [toast, setToast] = useState(null)
+  const [eventNotes, setEventNotes] = useState(() => storage.get('eventNotes', {}))
 
   const {
     tasks, todayTasks, allThisWeekTasks, missedTasks, top3Tasks, completedToday,
@@ -91,6 +93,14 @@ function AppMain({ sync }) {
   }, [saveTask])
 
   const reopenProject = useCallback((id) => { updateProject(id, { status: 'active' }) }, [updateProject])
+
+  const saveEventNote = useCallback((eventId, note) => {
+    setEventNotes(prev => {
+      const updated = { ...prev, [eventId]: note }
+      storage.set('eventNotes', updated)
+      return updated
+    })
+  }, [])
 
   const timeHandlers = {
     add: (taskId, secs, date) => addManualTimeEntry(taskId, secs, date),
@@ -210,6 +220,8 @@ function AppMain({ sync }) {
         return <Notes notes={notes} onAdd={addNote} onDelete={deleteNote} onTogglePin={togglePin} />
       case 'sprint':
         return <SprintView sprint={sprint} currentWeek={currentWeek} progress={progress} tasks={tasks} onSaveSprint={saveSprint} onUpdateWeekGoal={updateWeekGoal} onUpdateGoal={updateSprintGoal} onReset={resetSprint} />
+      case 'calendar':
+        return <Calendar google={google} companies={companies} projects={activeProjects} settings={settings} onCreateTask={(t) => saveTask(t)} eventNotes={eventNotes} onSaveEventNote={saveEventNote} onOpenSettings={() => setActiveView('settings')} />
       case 'prep':
         return <PrepDay companies={companies} projects={activeProjects} google={google} settings={settings} onCreateTasks={createTasksBatch} onOpenSettings={() => setActiveView('settings')} />
       case 'archive':

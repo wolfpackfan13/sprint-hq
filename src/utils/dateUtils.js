@@ -117,3 +117,68 @@ export const dateUtils = {
     return d.toISOString().split('T')[0]
   }
 }
+
+// ── Calendar grid helpers ──
+export const calUtils = {
+  // YYYY-MM-DD for a Date
+  iso(d) { return d.toISOString().split('T')[0] },
+
+  addDays(dateStr, n) {
+    const d = new Date(dateStr + 'T12:00:00')
+    d.setDate(d.getDate() + n)
+    return d.toISOString().split('T')[0]
+  },
+
+  // Monday-start week containing dateStr -> array of 7 YYYY-MM-DD
+  weekDays(dateStr) {
+    const d = new Date(dateStr + 'T12:00:00')
+    const day = d.getDay()
+    const diff = day === 0 ? -6 : 1 - day
+    const monday = new Date(d)
+    monday.setDate(d.getDate() + diff)
+    return Array.from({ length: 7 }, (_, i) => {
+      const x = new Date(monday)
+      x.setDate(monday.getDate() + i)
+      return x.toISOString().split('T')[0]
+    })
+  },
+
+  // Month grid (6 rows x 7 cols) for the month containing dateStr
+  monthGrid(dateStr) {
+    const d = new Date(dateStr + 'T12:00:00')
+    const year = d.getFullYear(), month = d.getMonth()
+    const first = new Date(year, month, 1)
+    const startDay = first.getDay() // 0=Sun
+    const offset = startDay === 0 ? -6 : 1 - startDay // Monday start
+    const gridStart = new Date(year, month, 1 + offset)
+    return Array.from({ length: 42 }, (_, i) => {
+      const x = new Date(gridStart)
+      x.setDate(gridStart.getDate() + i)
+      return {
+        date: x.toISOString().split('T')[0],
+        inMonth: x.getMonth() === month,
+        day: x.getDate(),
+      }
+    })
+  },
+
+  monthLabel(dateStr) {
+    return new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+  },
+
+  dayLabel(dateStr) {
+    return new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
+  },
+
+  timeLabel(iso) {
+    if (!iso) return ''
+    return new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+  },
+
+  // hour (0-23) -> "8 AM"
+  hourLabel(h) {
+    if (h === 0) return '12 AM'
+    if (h === 12) return '12 PM'
+    return h < 12 ? `${h} AM` : `${h - 12} PM`
+  },
+}

@@ -69,6 +69,37 @@ export function useGoogle(settings, saveGoogleToken, clearGoogleToken) {
     return resp.json()
   }, [settings.googleToken, clearGoogleToken])
 
+  const fetchCalendarRange = useCallback(async (startDate, endDate) => {
+    if (!isConnected()) return []
+    setLoadingCalendar(true)
+    setCalendarError(null)
+    try {
+      const timeMin = new Date(startDate + 'T00:00:00').toISOString()
+      const timeMax = new Date(endDate + 'T23:59:59').toISOString()
+      const data = await authFetch(
+        `https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${timeMin}&timeMax=${timeMax}&singleEvents=true&orderBy=startTime&maxResults=250`
+      )
+      const events = (data.items || []).map(ev => ({
+        id: ev.id,
+        title: ev.summary || 'No title',
+        start: ev.start?.dateTime || ev.start?.date,
+        end: ev.end?.dateTime || ev.end?.date,
+        allDay: !ev.start?.dateTime,
+        location: ev.location || '',
+        description: ev.description || '',
+        attendees: (ev.attendees || []).map(a => a.email),
+        htmlLink: ev.htmlLink,
+      }))
+      setCalendarEvents(events)
+      return events
+    } catch (err) {
+      setCalendarError(err.message)
+      return []
+    } finally {
+      setLoadingCalendar(false)
+    }
+  }, [authFetch, isConnected])
+
   const fetchCalendarEvents = useCallback(async (daysAhead = 14) => {
     if (!isConnected()) return
     setLoadingCalendar(true)
@@ -164,6 +195,7 @@ export function useGoogle(settings, saveGoogleToken, clearGoogleToken) {
     loadingCalendar,
     calendarError,
     fetchCalendarEvents,
+    fetchCalendarRange,
     backupToDrive,
     fetchRecentEmails,
   }

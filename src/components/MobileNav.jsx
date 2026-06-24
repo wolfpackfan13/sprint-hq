@@ -10,6 +10,7 @@ const PRIMARY = [
 
 const MORE = [
   { id: 'prep', label: 'Prep My Day', icon: CalendarClock },
+  { id: 'calendar', label: 'Calendar', icon: Calendar },
   { id: 'goals',         label: 'Goals',         icon: Target },
   { id: 'sprint',        label: '12-Week Sprint',icon: Calendar },
   { id: 'relationships', label: 'Relationships', icon: Users },
