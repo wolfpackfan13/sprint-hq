@@ -36,6 +36,7 @@ import { Notes } from './views/Notes'
 import { SprintView } from './views/SprintView'
 import { Settings } from './views/Settings'
 import { Archive } from './views/Archive'
+import { PrepDay } from './views/PrepDay'
 
 export default function App() {
   const [activeView, setActiveView] = useState('do')
@@ -81,6 +82,12 @@ export default function App() {
     setToast(null)
   }, [toast, uncompleteTask])
   const rescheduleTask = useCallback((taskId, date) => { saveTask({ id: taskId, dueDate: date }) }, [saveTask])
+
+  const createTasksBatch = useCallback((taskList) => {
+    taskList.forEach(t => saveTask(t))
+  }, [saveTask])
+
+  const reopenProject = useCallback((id) => { updateProject(id, { status: 'active' }) }, [updateProject])
 
   const timeHandlers = {
     add: (taskId, secs, date) => addManualTimeEntry(taskId, secs, date),
@@ -193,8 +200,10 @@ export default function App() {
         return <Notes notes={notes} onAdd={addNote} onDelete={deleteNote} onTogglePin={togglePin} />
       case 'sprint':
         return <SprintView sprint={sprint} currentWeek={currentWeek} progress={progress} tasks={tasks} onSaveSprint={saveSprint} onUpdateWeekGoal={updateWeekGoal} onUpdateGoal={updateSprintGoal} onReset={resetSprint} />
+      case 'prep':
+        return <PrepDay companies={companies} projects={activeProjects} google={google} settings={settings} onCreateTasks={createTasksBatch} onOpenSettings={() => setActiveView('settings')} />
       case 'archive':
-        return <Archive tasks={tasks} companies={companies} projects={projects} activeClient={activeClient} onUncomplete={uncompleteTask} onDelete={deleteTask} />
+        return <Archive tasks={tasks} companies={companies} projects={projects} activeClient={activeClient} onUncomplete={uncompleteTask} onDelete={deleteTask} tasksForProject={tasksForProject} onReopenProject={reopenProject} onDeleteProject={deleteProject} />
       case 'settings':
         return <Settings settings={settings} saveSettings={saveSettings} google={google} onBackup={handleBackup} companies={companies} onAddCompany={addCompany} onUpdateCompany={updateCompany} onDeleteCompany={deleteCompany} />
       default: return null

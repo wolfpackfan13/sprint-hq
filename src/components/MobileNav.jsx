@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Zap, CalendarDays, FolderKanban, Target, Clipboard, Users, Clock, Sparkles, FileText, Calendar, RotateCcw, MoreHorizontal, X, Archive } from 'lucide-react'
+import { Zap, CalendarDays, FolderKanban, Target, Clipboard, Users, Clock, Sparkles, FileText, Calendar, RotateCcw, MoreHorizontal, X, Archive, CalendarClock } from 'lucide-react'
 
 const PRIMARY = [
   { id: 'do',       label: 'Today',    icon: Zap },
@@ -9,6 +9,7 @@ const PRIMARY = [
 ]
 
 const MORE = [
+  { id: 'prep', label: 'Prep My Day', icon: CalendarClock },
   { id: 'goals',         label: 'Goals',         icon: Target },
   { id: 'sprint',        label: '12-Week Sprint',icon: Calendar },
   { id: 'relationships', label: 'Relationships', icon: Users },

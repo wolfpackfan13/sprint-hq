@@ -1,9 +1,9 @@
 import { useState } from 'react'
-import { Archive as ArchiveIcon, Search, RotateCcw, Trash2, CheckCircle2, Clock } from 'lucide-react'
+import { Archive as ArchiveIcon, Search, RotateCcw, Trash2, CheckCircle2, Clock, FolderKanban } from 'lucide-react'
 import { dateUtils } from '../utils/dateUtils'
 import { timeUtils } from '../utils/timeUtils'
 
-export function Archive({ tasks, companies, projects, activeClient, onUncomplete, onDelete }) {
+export function Archive({ tasks, companies, projects, activeClient, onUncomplete, onDelete, tasksForProject, onReopenProject, onDeleteProject }) {
   const [search, setSearch] = useState('')
 
   const completed = tasks
@@ -48,6 +48,51 @@ export function Archive({ tasks, companies, projects, activeClient, onUncomplete
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-5 max-w-2xl mx-auto w-full">
+        {(() => {
+          const closedProjects = (projects || [])
+            .filter(p => p.status === 'done')
+            .filter(p => !activeClient || p.companyId === activeClient)
+            .filter(p => !search || p.name.toLowerCase().includes(search.toLowerCase()))
+          if (closedProjects.length === 0) return null
+          return (
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <p className="text-[10px] font-bold text-navy-400 uppercase tracking-widest">Closed Projects</p>
+                <span className="text-[10px] text-navy-400">({closedProjects.length})</span>
+              </div>
+              <div className="space-y-2">
+                {closedProjects.map(p => {
+                  const co = companies.find(c => c.id === p.companyId)
+                  const pt = tasksForProject ? tasksForProject(p.id) : []
+                  const doneCount = pt.filter(t => t.status === 'done').length
+                  const projSecs = pt.reduce((acc, t) => acc + timeUtils.totalSeconds(t.timeEntries), 0)
+                  return (
+                    <div key={p.id} className="card px-4 py-3 group">
+                      <div className="flex items-start gap-3">
+                        <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: co ? `${co.color}15` : '#F0F2F8' }}>
+                          <FolderKanban size={15} style={{ color: co?.color || '#9BA5BB' }} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          {co && <span className="text-[10px] font-display font-semibold px-1.5 py-0.5 rounded inline-block mb-0.5" style={{ backgroundColor: `${co.color}15`, color: co.color }}>{co.emoji} {co.name}</span>}
+                          <p className="text-sm font-display font-semibold text-navy-700">{p.name}</p>
+                          <div className="flex items-center gap-3 mt-1">
+                            <span className="text-[11px] text-navy-400 flex items-center gap-1"><CheckCircle2 size={9} /> {doneCount}/{pt.length} tasks</span>
+                            {projSecs > 0 && <span className="text-[11px] text-navy-400 flex items-center gap-1"><Clock size={9} /> {timeUtils.formatDuration(projSecs)}</span>}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button onClick={() => onReopenProject(p.id)} className="flex items-center gap-1 text-[11px] text-navy-400 hover:text-gold-600 px-2 py-1 rounded-lg hover:bg-surface-100"><RotateCcw size={11} /> Reopen</button>
+                          <button onClick={() => onDeleteProject(p.id)} className="p-1 text-navy-400 hover:text-red-400"><Trash2 size={12} /></button>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )
+        })()}
+
         {completed.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-48 text-center">
             <CheckCircle2 size={32} className="text-surface-400 mb-3" />
