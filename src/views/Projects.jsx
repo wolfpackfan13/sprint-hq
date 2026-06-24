@@ -176,6 +176,12 @@ export function Projects({
                             </div>
                             {isOpen && (
                               <div className="mt-3 pt-3 border-t border-surface-200 space-y-3">
+                                {p.notes && (
+                                  <div>
+                                    <p className="text-[10px] font-semibold text-navy-400 uppercase tracking-wide mb-1">Notes</p>
+                                    <p className="text-sm text-navy-600 leading-relaxed whitespace-pre-wrap">{p.notes}</p>
+                                  </div>
+                                )}
                                 {(p.resources||[]).length > 0 && (
                                   <div>
                                     <p className="text-[10px] font-semibold text-navy-400 uppercase tracking-wide mb-1.5">Resources</p>

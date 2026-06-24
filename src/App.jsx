@@ -19,9 +19,9 @@ import { MobileNav } from './components/MobileNav'
 import { TaskModal } from './components/TaskModal'
 import { MeetingModal } from './components/MeetingModal'
 import { ProjectModal } from './components/ProjectModal'
-import { SprintSetup } from './components/SprintSetup'
 import { CelebrationBurst } from './components/Celebration'
 import { BreakdownModal } from './components/BreakdownModal'
+import { Toast } from './components/Toast'
 
 import { DoView } from './views/DoView'
 import { WeekBoard } from './views/WeekBoard'
@@ -35,6 +35,7 @@ import { Briefing } from './views/Briefing'
 import { Notes } from './views/Notes'
 import { SprintView } from './views/SprintView'
 import { Settings } from './views/Settings'
+import { Archive } from './views/Archive'
 
 export default function App() {
   const [activeView, setActiveView] = useState('do')
@@ -43,8 +44,8 @@ export default function App() {
   const [meetingModal, setMeetingModal] = useState({ open: false, meeting: null })
   const [projectModal, setProjectModal] = useState({ open: false, project: null })
   const [breakdownModal, setBreakdownModal] = useState({ open: false, task: null })
-  const [showSprintSetup, setShowSprintSetup] = useState(false)
   const [celebration, setCelebration] = useState(false)
+  const [toast, setToast] = useState(null)
 
   const {
     tasks, todayTasks, allThisWeekTasks, missedTasks, top3Tasks, completedToday,
@@ -72,7 +73,13 @@ export default function App() {
   const handleComplete = useCallback((id) => {
     completeTask(id)
     if (settings.celebrationsEnabled !== false) setCelebration(true)
+    setToast({ message: 'Task completed', actionLabel: 'Undo', taskId: id, duration: 5000 })
   }, [completeTask, settings.celebrationsEnabled])
+
+  const handleToastUndo = useCallback(() => {
+    if (toast?.taskId) uncompleteTask(toast.taskId)
+    setToast(null)
+  }, [toast, uncompleteTask])
   const rescheduleTask = useCallback((taskId, date) => { saveTask({ id: taskId, dueDate: date }) }, [saveTask])
 
   const timeHandlers = {
@@ -147,9 +154,8 @@ export default function App() {
     return () => window.removeEventListener('keydown', handler)
   }, [taskModal.open, meetingModal.open, projectModal.open, breakdownModal.open, activeView, openAddTask])
 
-  // ── First run ──
-  if (!sprint && !showSprintSetup) return <SprintSetup onSave={saveSprint} />
-  if (showSprintSetup) return <SprintSetup onSave={(d) => { saveSprint(d); setShowSprintSetup(false) }} />
+  // ── First run: if no sprint, force the Sprint view which now has inline setup ──
+  const effectiveView = !sprint ? 'sprint' : activeView
 
   const taskCardProps = {
     companies, projects,
@@ -158,7 +164,7 @@ export default function App() {
   }
 
   const renderView = () => {
-    switch (activeView) {
+    switch (effectiveView) {
       case 'do':
         return <DoView todayTasks={filterByClient(todayTasks)} top3Tasks={filterByClient(top3Tasks)} missedTasks={filterByClient(missedTasks)}
           companies={companies} projects={projects} onAdd={openAddTask} onComplete={handleComplete} onUncomplete={uncompleteTask} onEdit={openEditTask} onDelete={deleteTask}
@@ -186,7 +192,9 @@ export default function App() {
       case 'notes':
         return <Notes notes={notes} onAdd={addNote} onDelete={deleteNote} onTogglePin={togglePin} />
       case 'sprint':
-        return <SprintView sprint={sprint} currentWeek={currentWeek} progress={progress} tasks={tasks} onUpdateWeekGoal={updateWeekGoal} onUpdateGoal={updateSprintGoal} onReset={resetSprint} />
+        return <SprintView sprint={sprint} currentWeek={currentWeek} progress={progress} tasks={tasks} onSaveSprint={saveSprint} onUpdateWeekGoal={updateWeekGoal} onUpdateGoal={updateSprintGoal} onReset={resetSprint} />
+      case 'archive':
+        return <Archive tasks={tasks} companies={companies} projects={projects} activeClient={activeClient} onUncomplete={uncompleteTask} onDelete={deleteTask} />
       case 'settings':
         return <Settings settings={settings} saveSettings={saveSettings} google={google} onBackup={handleBackup} companies={companies} onAddCompany={addCompany} onUpdateCompany={updateCompany} onDeleteCompany={deleteCompany} />
       default: return null
@@ -197,19 +205,20 @@ export default function App() {
 
   return (
     <div className="flex h-screen bg-surface-100 overflow-hidden">
-      <Sidebar activeView={activeView} setActiveView={setActiveView} missedCount={missedCount} completedToday={completedToday} onSettings={() => setActiveView('settings')} />
+      <Sidebar activeView={effectiveView} setActiveView={setActiveView} missedCount={missedCount} completedToday={completedToday} onSettings={() => setActiveView('settings')} />
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <TopBar sprint={sprint} currentWeek={currentWeek} progress={progress} vision={vision} onSaveVision={saveVision}
-          onEditSprint={() => setShowSprintSetup(true)} companies={companies} activeClient={activeClient} onSelectClient={setActiveClient}
+          onEditSprint={() => setActiveView('sprint')} companies={companies} activeClient={activeClient} onSelectClient={setActiveClient}
           onNewTask={() => openAddTask({ dueDate: new Date().toISOString().split('T')[0] })} onNewProject={() => openAddProject({ companyId: activeClient })}
           onNewMeeting={() => setMeetingModal({ open: true, meeting: {} })} onBriefing={() => setActiveView('briefing')} />
         <div className="flex-1 overflow-hidden pb-14 md:pb-0">{renderView()}</div>
       </div>
-      <MobileNav activeView={activeView} setActiveView={setActiveView} missedCount={missedCount} />
+      <MobileNav activeView={effectiveView} setActiveView={setActiveView} missedCount={missedCount} />
       {taskModal.open && <TaskModal task={taskModal.task} companies={companies} projects={projects} onSave={handleSaveTask} onClose={closeTaskModal} onBreakdown={openBreakdown} timeHandlers={timeHandlers} />}
       {meetingModal.open && <MeetingModal meeting={meetingModal.meeting} companies={companies} projects={projects} onSave={handleSaveMeeting} onClose={() => setMeetingModal({ open: false, meeting: null })} />}
       {projectModal.open && <ProjectModal project={projectModal.project} companies={companies} goals={goals} defaultCompanyId={projectModal.project?.companyId} onSave={handleSaveProject} onClose={() => setProjectModal({ open: false, project: null })} />}
       {breakdownModal.open && <BreakdownModal task={breakdownModal.task} apiKey={settings.anthropicKey} onApply={applyBreakdown} onClose={() => setBreakdownModal({ open: false, task: null })} />}
+      <Toast toast={toast} onAction={handleToastUndo} onDismiss={() => setToast(null)} />
       <CelebrationBurst active={celebration} onDone={() => setCelebration(false)} />
     </div>
   )

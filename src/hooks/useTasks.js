@@ -128,8 +128,10 @@ export function useTasks() {
   }
 
   const today = dateUtils.today()
-  const todayTasks = tasks.filter(t => dateUtils.isToday(t.dueDate))
-  const allThisWeekTasks = tasks.filter(t => dateUtils.isThisWeek(t.dueDate))
+  // A completed task only stays in active views on the day it was completed; after that it lives in the archive
+  const completedTodayOnly = (t) => t.status !== 'done' || (t.completedAt && t.completedAt.split('T')[0] === today)
+  const todayTasks = tasks.filter(t => dateUtils.isToday(t.dueDate) && completedTodayOnly(t))
+  const allThisWeekTasks = tasks.filter(t => dateUtils.isThisWeek(t.dueDate) && completedTodayOnly(t))
   const missedTasks = tasks.filter(t => dateUtils.isMissed(t))
   const top3Tasks = tasks.filter(t => t.isTop3 && t.dueDate === today && t.status === 'todo')
 

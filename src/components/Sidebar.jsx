@@ -1,4 +1,4 @@
-import { Zap, CalendarDays, FolderKanban, Target, Clipboard, Users, Clock, Sparkles, FileText, Settings, CheckSquare, Calendar, RotateCcw } from 'lucide-react'
+import { Zap, CalendarDays, FolderKanban, Target, Clipboard, Users, Clock, Sparkles, FileText, Settings, CheckSquare, Calendar, RotateCcw, Archive } from 'lucide-react'
 
 const GROUPS = [
   {
@@ -23,6 +23,7 @@ const GROUPS = [
       { id: 'relationships', label: 'Relationships',icon: Users },
       { id: 'hours',         label: 'Hours & Invoices', icon: Clock },
       { id: 'review',        label: 'Weekly Review',icon: RotateCcw },
+      { id: 'archive',       label: 'Completed',    icon: Archive },
     ],
   },
   {

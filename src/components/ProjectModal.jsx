@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { X, Calendar, Link2 } from 'lucide-react'
+import { X, Calendar, Link2, AlignLeft } from 'lucide-react'
 import { ResourceLinks } from './ResourceLinks'
 
 export function ProjectModal({ project, companies, goals, defaultCompanyId, onSave, onClose }) {
@@ -7,6 +7,7 @@ export function ProjectModal({ project, companies, goals, defaultCompanyId, onSa
   const [companyId, setCompanyId] = useState(project?.companyId || defaultCompanyId || null)
   const [goalId, setGoalId] = useState(project?.goalId || null)
   const [dueDate, setDueDate] = useState(project?.dueDate || '')
+  const [notes, setNotes] = useState(project?.notes || '')
   const [resources, setResources] = useState(project?.resources || [])
 
   return (
@@ -19,6 +20,10 @@ export function ProjectModal({ project, companies, goals, defaultCompanyId, onSa
         </div>
         <div className="px-5 pb-5 space-y-4">
           <input value={name} onChange={e => setName(e.target.value)} placeholder="Project name *" autoFocus className="w-full input-base px-4 py-2.5 text-sm font-medium" />
+          <div className="relative">
+            <AlignLeft size={13} className="absolute left-3.5 top-3 text-navy-400 pointer-events-none" />
+            <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Project notes, scope, context..." rows={3} className="w-full input-base pl-9 pr-4 py-2.5 text-sm resize-none" />
+          </div>
           <div>
             <p className="text-xs font-semibold text-navy-500 uppercase tracking-wide mb-2">Client</p>
             <div className="flex flex-wrap gap-2">
@@ -57,7 +62,7 @@ export function ProjectModal({ project, companies, goals, defaultCompanyId, onSa
           </div>
           <div className="flex gap-3 pt-1">
             <button onClick={onClose} className="flex-1 py-2.5 btn-ghost text-sm">Cancel</button>
-            <button onClick={() => name.trim() && companyId && onSave({ ...(project?.id ? { id: project.id } : {}), name: name.trim(), companyId, goalId, dueDate: dueDate || null, resources })}
+            <button onClick={() => name.trim() && companyId && onSave({ ...(project?.id ? { id: project.id } : {}), name: name.trim(), companyId, goalId, dueDate: dueDate || null, notes: notes.trim(), resources })}
               disabled={!name.trim() || !companyId} className="flex-1 py-2.5 btn-primary text-sm">{project?.id ? 'Save' : 'Create'}</button>
           </div>
         </div>
