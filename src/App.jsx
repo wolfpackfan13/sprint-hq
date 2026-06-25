@@ -40,6 +40,7 @@ import { PrepDay } from './views/PrepDay'
 import { Calendar } from './views/Calendar'
 import { Clients } from './views/Clients'
 import { ClientCockpit } from './views/ClientCockpit'
+import { ProjectDetail } from './views/ProjectDetail'
 import { useSync } from './hooks/useSync'
 import { Login } from './components/Login'
 import { SyncIndicator } from './components/SyncIndicator'
@@ -55,6 +56,7 @@ function AppMain({ sync }) {
   const [toast, setToast] = useState(null)
   const [eventNotes, setEventNotes] = useState(() => storage.get('eventNotes', {}))
   const [cockpitClient, setCockpitClient] = useState(null)
+  const [detailProject, setDetailProject] = useState(null)
 
   const {
     tasks, todayTasks, allThisWeekTasks, missedTasks, top3Tasks, completedToday,
@@ -96,6 +98,11 @@ function AppMain({ sync }) {
   }, [saveTask])
 
   const reopenProject = useCallback((id) => { updateProject(id, { status: 'active' }) }, [updateProject])
+
+  const openProjectDetail = useCallback((project) => {
+    setDetailProject(project)
+    setActiveView('projects')
+  }, [])
 
   const saveEventNote = useCallback((eventId, note) => {
     setEventNotes(prev => {
@@ -195,10 +202,24 @@ function AppMain({ sync }) {
       case 'week':
         return <WeekBoard allTasks={filterByClient(allThisWeekTasks)} companies={companies} projects={filterByClient(activeProjects)}
           onAdd={openAddTask} onComplete={handleComplete} onEdit={openEditTask} onReschedule={rescheduleTask}
-          onOpenProject={() => setActiveView('projects')} />
-      case 'projects':
+          onOpenProject={(p) => openProjectDetail(p)} />
+      case 'projects': {
+        if (detailProject) {
+          const liveProject = projects.find(p => p.id === detailProject.id) || detailProject
+          const projCompany = companies.find(c => c.id === liveProject.companyId)
+          return <ProjectDetail
+            project={liveProject} company={projCompany} tasks={tasks} goals={goals}
+            onBack={() => setDetailProject(null)}
+            onAddTask={openAddTask}
+            onEditProject={(p) => setProjectModal({ open: true, project: p })}
+            onUpdateProject={updateProject}
+            taskCardProps={taskCardProps}
+          />
+        }
         return <Projects projects={activeProjects} companies={companies} goals={goals} activeClient={activeClient} tasksForProject={tasksForProject}
-          onAddProject={addProject} onUpdateProject={updateProject} onDeleteProject={deleteProject} taskCardProps={taskCardProps} />
+          onAddProject={addProject} onUpdateProject={updateProject} onDeleteProject={deleteProject} taskCardProps={taskCardProps}
+          onOpenProject={openProjectDetail} />
+      }
       case 'meetings':
         return <Meetings meetings={filterByClient(meetings)} companies={companies} projects={projects} activeClient={activeClient}
           onAddMeeting={() => setMeetingModal({ open: true, meeting: {} })} onEditMeeting={(m) => setMeetingModal({ open: true, meeting: m })} onDeleteMeeting={deleteMeeting}
@@ -226,7 +247,7 @@ function AppMain({ sync }) {
             onBack={() => setCockpitClient(null)}
             onAddTask={openAddTask} onAddProject={openAddProject}
             onAddMeeting={(d) => setMeetingModal({ open: true, meeting: d || {} })}
-            onOpenProject={() => { setCockpitClient(null); setActiveView('projects') }}
+            onOpenProject={(p) => { setCockpitClient(null); openProjectDetail(p) }}
             taskCardProps={taskCardProps}
           />
         }

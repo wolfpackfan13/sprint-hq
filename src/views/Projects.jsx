@@ -77,7 +77,7 @@ function ProjectForm({ project, companies, goals, defaultCompanyId, onSave, onCl
 
 export function Projects({
   projects, companies, goals, activeClient, tasksForProject,
-  onAddProject, onUpdateProject, onDeleteProject, taskCardProps, registerNewProject,
+  onAddProject, onUpdateProject, onDeleteProject, taskCardProps, onOpenProject,
 }) {
   const [showForm, setShowForm] = useState(false)
   const [editingProject, setEditingProject] = useState(null)
@@ -147,8 +147,8 @@ export function Projects({
                               </div>
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-start justify-between gap-2">
-                                  <button onClick={() => toggle(p.id)} className="text-left">
-                                    <p className="font-display font-semibold text-navy-900 text-sm">{p.name}</p>
+                                  <button onClick={() => onOpenProject ? onOpenProject(p) : toggle(p.id)} className="text-left group/name">
+                                    <p className="font-display font-semibold text-navy-900 text-sm group-hover/name:text-gold-600 transition-colors">{p.name}</p>
                                   </button>
                                   <div className="flex gap-0.5 flex-shrink-0">
                                     <button onClick={() => { setEditingProject(p); setShowForm(true) }} className="p-1 text-navy-400 hover:text-gold-600"><Pencil size={12} /></button>
