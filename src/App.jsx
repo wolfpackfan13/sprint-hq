@@ -177,13 +177,6 @@ function AppMain({ sync }) {
     return () => window.removeEventListener('keydown', handler)
   }, [taskModal.open, meetingModal.open, projectModal.open, breakdownModal.open, activeView, openAddTask])
 
-  // ── Cloud sync: queue a push whenever local data changes ──
-  useEffect(() => {
-    const onChange = () => sync.queueSync()
-    window.addEventListener('sprintHQ:changed', onChange)
-    return () => window.removeEventListener('sprintHQ:changed', onChange)
-  }, [sync])
-
   // ── First run: if no sprint, force the Sprint view which now has inline setup ──
   const effectiveView = !sprint ? 'sprint' : activeView
 
@@ -200,8 +193,9 @@ function AppMain({ sync }) {
           companies={companies} projects={projects} onAdd={openAddTask} onComplete={handleComplete} onUncomplete={uncompleteTask} onEdit={openEditTask} onDelete={deleteTask}
           completedToday={completedToday} timer={timer} onToggleTimer={timer.toggle} onToggleSubtask={toggleSubtask} onBreakdown={openBreakdown} onToggleTop3={toggleTop3} />
       case 'week':
-        return <WeekBoard allTasks={filterByClient(allThisWeekTasks)} companies={companies} projects={projects}
-          onAdd={openAddTask} onComplete={handleComplete} onEdit={openEditTask} onReschedule={rescheduleTask} />
+        return <WeekBoard allTasks={filterByClient(allThisWeekTasks)} companies={companies} projects={filterByClient(activeProjects)}
+          onAdd={openAddTask} onComplete={handleComplete} onEdit={openEditTask} onReschedule={rescheduleTask}
+          onOpenProject={() => setActiveView('projects')} />
       case 'projects':
         return <Projects projects={activeProjects} companies={companies} goals={goals} activeClient={activeClient} tasksForProject={tasksForProject}
           onAddProject={addProject} onUpdateProject={updateProject} onDeleteProject={deleteProject} taskCardProps={taskCardProps} />
@@ -236,7 +230,7 @@ function AppMain({ sync }) {
             taskCardProps={taskCardProps}
           />
         }
-        return <Clients companies={companies} tasks={tasks} projects={projects} meetings={meetings} onOpenClient={(c) => setCockpitClient(c)} />
+        return <Clients companies={companies} tasks={tasks} projects={projects} meetings={meetings} onOpenClient={(c) => setCockpitClient(c)} onAddCompany={addCompany} onUpdateCompany={updateCompany} onDeleteCompany={deleteCompany} />
       case 'calendar':
         return <Calendar google={google} companies={companies} projects={activeProjects} settings={settings} onCreateTask={(t) => saveTask(t)} eventNotes={eventNotes} onSaveEventNote={saveEventNote} onOpenSettings={() => setActiveView('settings')} />
       case 'prep':

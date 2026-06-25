@@ -1,11 +1,13 @@
-// Local-first storage. Every write also emits a 'sprintHQ:changed' event
-// so the sync layer can push to the cloud (debounced).
+// Local-first storage. Every write emits 'sprintHQ:changed' with the key,
+// the new value, and the previous value, so the sync engine can diff and
+// push only what changed. setLocalOnly writes without emitting (used when
+// applying data pulled from the cloud, to avoid echo loops).
 
-function emitChange(key) {
+function emitChange(key, next, prev) {
   try {
-    window.dispatchEvent(new CustomEvent('sprintHQ:changed', { detail: { key } }))
+    window.dispatchEvent(new CustomEvent('sprintHQ:changed', { detail: { key, next, prev } }))
   } catch {
-    // window may not exist in some environments; ignore
+    // ignore (non-browser env)
   }
 }
 
@@ -20,9 +22,24 @@ export const storage = {
   },
 
   set(key, value) {
+    let prev = null
+    try {
+      const existing = localStorage.getItem(`sprintHQ_${key}`)
+      prev = existing ? JSON.parse(existing) : null
+    } catch { prev = null }
     try {
       localStorage.setItem(`sprintHQ_${key}`, JSON.stringify(value))
-      emitChange(key)
+      emitChange(key, value, prev)
+      return true
+    } catch {
+      return false
+    }
+  },
+
+  // Write without emitting a sync event (used when applying cloud data)
+  setLocalOnly(key, value) {
+    try {
+      localStorage.setItem(`sprintHQ_${key}`, JSON.stringify(value))
       return true
     } catch {
       return false
@@ -32,7 +49,7 @@ export const storage = {
   remove(key) {
     try {
       localStorage.removeItem(`sprintHQ_${key}`)
-      emitChange(key)
+      emitChange(key, null, null)
       return true
     } catch {
       return false

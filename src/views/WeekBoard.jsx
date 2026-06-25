@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Plus, Check, Clock } from 'lucide-react'
+import { Plus, Check, Clock, FolderKanban } from 'lucide-react'
 import { dateUtils } from '../utils/dateUtils'
 
 const PRIORITY_DOT = { high: '#EF4444', medium: '#F4A825', low: '#9BA5BB' }
@@ -41,7 +41,7 @@ function BoardTask({ task, companies, projects, onComplete, onEdit, onDragStart,
   )
 }
 
-export function WeekBoard({ allTasks, companies, projects, onAdd, onComplete, onEdit, onReschedule }) {
+export function WeekBoard({ allTasks, companies, projects, onAdd, onComplete, onEdit, onReschedule, onOpenProject }) {
   const weekDays = dateUtils.thisWeekDays()
   const [draggingTask, setDraggingTask] = useState(null)
   const [dragOverDay, setDragOverDay] = useState(null)
@@ -52,6 +52,8 @@ export function WeekBoard({ allTasks, companies, projects, onAdd, onComplete, on
     const o = { high: 0, medium: 1, low: 2 }
     return (o[a.priority] ?? 1) - (o[b.priority] ?? 1)
   })
+
+  const projectsDue = (d) => (projects || []).filter(p => p.status === 'active' && p.dueDate === d)
 
   const onDragStart = (e, task) => { setDraggingTask(task); e.dataTransfer.effectAllowed = 'move' }
   const onDragEnd = () => { setDraggingTask(null); setDragOverDay(null) }
@@ -106,6 +108,20 @@ export function WeekBoard({ allTasks, companies, projects, onAdd, onComplete, on
 
                 {/* Tasks */}
                 <div className="flex-1 overflow-y-auto p-2 space-y-2">
+                  {projectsDue(day.date).map(p => {
+                    const co = companies.find(c => c.id === p.companyId)
+                    return (
+                      <button key={p.id} onClick={() => onOpenProject ? onOpenProject(p) : null}
+                        className="w-full text-left rounded-lg px-2 py-1.5 border-l-2 flex items-center gap-1.5"
+                        style={{ backgroundColor: co ? `${co.color}12` : '#F0F2F8', borderColor: co?.color || '#9BA5BB' }}>
+                        <FolderKanban size={11} style={{ color: co?.color || '#9BA5BB' }} className="flex-shrink-0" />
+                        <div className="min-w-0">
+                          <p className="text-[9px] font-bold uppercase tracking-wide" style={{ color: co?.color || '#9BA5BB' }}>Project due</p>
+                          <p className="text-[11px] font-semibold text-navy-800 truncate">{p.name}</p>
+                        </div>
+                      </button>
+                    )
+                  })}
                   {dayTasks.map(task => (
                     <BoardTask key={task.id} task={task} companies={companies} projects={projects}
                       onComplete={onComplete} onEdit={onEdit}

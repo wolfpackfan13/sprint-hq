@@ -1,5 +1,6 @@
-import { useMemo } from 'react'
-import { ChevronRight, AlertTriangle, CheckCircle2 } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { ChevronRight, AlertTriangle, CheckCircle2, Plus, Pencil } from 'lucide-react'
+import { ClientForm } from '../components/ClientForm'
 import { dateUtils } from '../utils/dateUtils'
 
 function clientStats(company, { tasks, projects, meetings }) {
@@ -24,7 +25,15 @@ function clientStats(company, { tasks, projects, meetings }) {
   return { openTasks: openTasks.length, overdue, activeProjects, lastActivity, daysSince, isStale, hasWork }
 }
 
-export function Clients({ companies, tasks, projects, meetings, onOpenClient }) {
+export function Clients({ companies, tasks, projects, meetings, onOpenClient, onAddCompany, onUpdateCompany, onDeleteCompany }) {
+  const [showForm, setShowForm] = useState(false)
+  const [editing, setEditing] = useState(null)
+
+  const handleSave = (data) => {
+    if (data.id) onUpdateCompany(data.id, data)
+    else onAddCompany(data)
+    setShowForm(false); setEditing(null)
+  }
   const enriched = useMemo(() =>
     companies.map(c => ({ company: c, stats: clientStats(c, { tasks, projects, meetings }) }))
       .sort((a, b) => {
@@ -40,9 +49,12 @@ export function Clients({ companies, tasks, projects, meetings, onOpenClient }) 
   return (
     <div className="h-full overflow-y-auto">
       <div className="max-w-2xl mx-auto w-full px-4">
-        <div className="pt-5 pb-3">
-          <h1 className="font-display font-bold text-navy-900 text-xl">Clients & Areas</h1>
-          <p className="text-navy-500 text-sm mt-0.5">{companies.length} areas · open one to see everything</p>
+        <div className="pt-5 pb-3 flex items-center justify-between">
+          <div>
+            <h1 className="font-display font-bold text-navy-900 text-xl">Clients & Areas</h1>
+            <p className="text-navy-500 text-sm mt-0.5">{companies.length} areas · open one to see everything</p>
+          </div>
+          <button onClick={() => { setEditing(null); setShowForm(true) }} className="btn-primary px-4 py-2 text-sm flex items-center gap-1.5"><Plus size={15} /> Add</button>
         </div>
 
         {/* Needs attention banner */}
@@ -74,12 +86,14 @@ export function Clients({ companies, tasks, projects, meetings, onOpenClient }) 
                     {stats.lastActivity && <span className="text-xs text-navy-400">· {stats.daysSince === 0 ? 'today' : `${stats.daysSince}d ago`}</span>}
                   </div>
                 </div>
+                <span onClick={(e) => { e.stopPropagation(); setEditing(company); setShowForm(true) }} className="p-1.5 text-navy-300 hover:text-gold-600 flex-shrink-0 cursor-pointer"><Pencil size={14} /></span>
                 <ChevronRight size={18} className="text-navy-300 flex-shrink-0" />
               </div>
             </button>
           ))}
         </div>
       </div>
+      {showForm && <ClientForm client={editing} onSave={handleSave} onDelete={(id) => { onDeleteCompany(id); setShowForm(false); setEditing(null) }} onClose={() => { setShowForm(false); setEditing(null) }} />}
     </div>
   )
 }
