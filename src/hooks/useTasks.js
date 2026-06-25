@@ -134,6 +134,7 @@ export function useTasks() {
   const allThisWeekTasks = tasks.filter(t => dateUtils.isThisWeek(t.dueDate) && completedTodayOnly(t))
   const missedTasks = tasks.filter(t => dateUtils.isMissed(t))
   const top3Tasks = tasks.filter(t => t.isTop3 && t.dueDate === today && t.status === 'todo')
+  const unscheduledTasks = tasks.filter(t => !t.dueDate && t.status === 'todo')
 
   const completedToday = tasks.filter(t =>
     t.status === 'done' && t.completedAt && t.completedAt.split('T')[0] === today
@@ -144,6 +145,7 @@ export function useTasks() {
   return {
     tasks,
     todayTasks: sortByPriority(todayTasks),
+    unscheduledTasks: sortByPriority(unscheduledTasks),
     allThisWeekTasks: sortByPriority(allThisWeekTasks),
     missedTasks: sortByPriority(missedTasks),
     top3Tasks,

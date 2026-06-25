@@ -1,12 +1,12 @@
 import { useState } from 'react'
-import { Sparkles, ChevronDown, Check, Pencil, Plus, CheckSquare, FolderKanban, Clipboard, LogOut } from 'lucide-react'
+import { Sparkles, ChevronDown, Check, Pencil, Plus, CheckSquare, FolderKanban, Clipboard, LogOut, Search } from 'lucide-react'
 import { SyncIndicator } from './SyncIndicator'
 
 export function TopBar({
   sprint, currentWeek, progress, vision, onSaveVision, onEditSprint,
   companies, activeClient, onSelectClient,
   onNewTask, onNewProject, onNewMeeting, onBriefing,
-  syncStatus, lastSynced, userEmail, onSignOut,
+  syncStatus, lastSynced, userEmail, onSignOut, onSearch,
 }) {
   const [whyOpen, setWhyOpen] = useState(false)
   const [editingWhy, setEditingWhy] = useState(false)
@@ -67,6 +67,12 @@ export function TopBar({
         <button onClick={onBriefing} className="flex items-center gap-1 text-xs text-navy-500 hover:text-gold-600 transition-colors flex-shrink-0">
           <Sparkles size={13} className="text-gold-500" />
           <span className="font-display font-semibold hidden md:inline">Briefing</span>
+        </button>
+
+        {/* Search */}
+        <button onClick={onSearch} className="flex items-center gap-1.5 text-xs text-navy-500 hover:text-gold-600 transition-colors flex-shrink-0" title="Search (press /)">
+          <Search size={14} />
+          <span className="font-display font-semibold hidden md:inline">Search</span>
         </button>
 
         {/* Sync status */}

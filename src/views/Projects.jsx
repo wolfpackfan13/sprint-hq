@@ -140,17 +140,15 @@ export function Projects({
                       const due = dueLabel(p.dueDate)
                       return (
                         <div key={p.id} className="card overflow-hidden">
-                          <div className="p-3">
+                          <div className="p-3 cursor-pointer card-hover" onClick={() => onOpenProject ? onOpenProject(p) : toggle(p.id)}>
                             <div className="flex items-start gap-3">
                               <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: `${co.color}15` }}>
                                 <FolderKanban size={15} style={{ color: co.color }} />
                               </div>
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-start justify-between gap-2">
-                                  <button onClick={() => onOpenProject ? onOpenProject(p) : toggle(p.id)} className="text-left group/name">
-                                    <p className="font-display font-semibold text-navy-900 text-sm group-hover/name:text-gold-600 transition-colors">{p.name}</p>
-                                  </button>
-                                  <div className="flex gap-0.5 flex-shrink-0">
+                                  <p className="font-display font-semibold text-navy-900 text-sm">{p.name}</p>
+                                  <div className="flex gap-0.5 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
                                     <button onClick={() => { setEditingProject(p); setShowForm(true) }} className="p-1 text-navy-400 hover:text-gold-600"><Pencil size={12} /></button>
                                     <button onClick={() => onUpdateProject(p.id, { status: 'done' })} className="p-1 text-navy-400 hover:text-forest-500"><CheckCircle2 size={12} /></button>
                                     <button onClick={() => onDeleteProject(p.id)} className="p-1 text-navy-400 hover:text-red-400"><Trash2 size={12} /></button>
@@ -175,7 +173,7 @@ export function Projects({
                               </div>
                             </div>
                             {isOpen && (
-                              <div className="mt-3 pt-3 border-t border-surface-200 space-y-3">
+                              <div className="mt-3 pt-3 border-t border-surface-200 space-y-3" onClick={(e) => e.stopPropagation()}>
                                 {p.notes && (
                                   <div>
                                     <p className="text-[10px] font-semibold text-navy-400 uppercase tracking-wide mb-1">Notes</p>

@@ -4,12 +4,13 @@ import { TaskCard } from '../components/TaskCard'
 import { dateUtils } from '../utils/dateUtils'
 
 export function DoView({
-  todayTasks, top3Tasks, missedTasks, companies, projects,
-  onAdd, onComplete, onUncomplete, onEdit, onDelete,
+  todayTasks, top3Tasks, missedTasks, unscheduledTasks = [], companies, projects,
+  onAdd, onComplete, onUncomplete, onEdit, onDelete, onReschedule,
   completedToday, timer, onToggleTimer, onToggleSubtask, onBreakdown, onToggleTop3,
 }) {
   const [quickTitle, setQuickTitle] = useState('')
   const [showMissed, setShowMissed] = useState(true)
+  const [showUnscheduled, setShowUnscheduled] = useState(true)
   const inputRef = useRef(null)
   const today = dateUtils.today()
 
@@ -110,6 +111,33 @@ export function DoView({
             <div className="space-y-2">
               {todoTasks.map(task => <TaskCard key={task.id} task={task} {...cardProps} />)}
             </div>
+          </div>
+        )}
+
+        {/* Unscheduled — no-date orphans (incl. auto-imports) */}
+        {unscheduledTasks.length > 0 && (
+          <div className="card border-dashed border-surface-400 bg-surface-100/50 overflow-hidden">
+            <button onClick={() => setShowUnscheduled(s => !s)} className="w-full flex items-center justify-between px-4 py-3">
+              <div className="flex items-center gap-2">
+                <AlertCircle size={15} className="text-navy-400" />
+                <span className="font-display font-semibold text-navy-700 text-sm">{unscheduledTasks.length} unscheduled — no due date</span>
+              </div>
+              {showUnscheduled ? <ChevronUp size={16} className="text-navy-400" /> : <ChevronDown size={16} className="text-navy-400" />}
+            </button>
+            {showUnscheduled && (
+              <div className="px-3 pb-3 space-y-2">
+                {unscheduledTasks.map(task => (
+                  <div key={task.id}>
+                    <TaskCard task={task} {...cardProps} />
+                    <div className="flex gap-3 mt-1 pl-8">
+                      <button onClick={() => onReschedule ? onReschedule(task.id, today) : onEdit({ ...task, dueDate: today })} className="text-[11px] text-navy-500 hover:text-gold-600">Schedule today</button>
+                      <span className="text-navy-300">·</span>
+                      <button onClick={() => onReschedule ? onReschedule(task.id, dateUtils.addDays(1)) : onEdit({ ...task, dueDate: dateUtils.addDays(1) })} className="text-[11px] text-navy-500 hover:text-gold-600">Tomorrow</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 

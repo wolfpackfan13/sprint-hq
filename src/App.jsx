@@ -24,6 +24,7 @@ import { BreakdownModal } from './components/BreakdownModal'
 import { Toast } from './components/Toast'
 
 import { DoView } from './views/DoView'
+import { AllTasks } from './views/AllTasks'
 import { WeekBoard } from './views/WeekBoard'
 import { Projects } from './views/Projects'
 import { Meetings } from './views/Meetings'
@@ -44,6 +45,7 @@ import { ProjectDetail } from './views/ProjectDetail'
 import { useSync } from './hooks/useSync'
 import { Login } from './components/Login'
 import { SyncIndicator } from './components/SyncIndicator'
+import { SearchOverlay } from './components/SearchOverlay'
 
 function AppMain({ sync }) {
   const [activeView, setActiveView] = useState('do')
@@ -57,9 +59,10 @@ function AppMain({ sync }) {
   const [eventNotes, setEventNotes] = useState(() => storage.get('eventNotes', {}))
   const [cockpitClient, setCockpitClient] = useState(null)
   const [detailProject, setDetailProject] = useState(null)
+  const [searchOpen, setSearchOpen] = useState(false)
 
   const {
-    tasks, todayTasks, allThisWeekTasks, missedTasks, top3Tasks, completedToday,
+    tasks, todayTasks, allThisWeekTasks, missedTasks, top3Tasks, unscheduledTasks, completedToday,
     tasksForProject, saveTask, completeTask, uncompleteTask, deleteTask,
     toggleTop3, setSubtasks, toggleSubtask, addTimeEntry, addManualTimeEntry, updateTimeEntry, deleteTimeEntry, setResources,
   } = useTasks()
@@ -103,6 +106,15 @@ function AppMain({ sync }) {
     setDetailProject(project)
     setActiveView('projects')
   }, [])
+
+  const handleSearchGoto = useCallback(({ type, item }) => {
+    setSearchOpen(false)
+    if (type === 'task') { openEditTask(item) }
+    else if (type === 'project') { setDetailProject(item); setActiveView('projects') }
+    else if (type === 'client') { setCockpitClient(item); setActiveView('clients') }
+    else if (type === 'meeting') { setMeetingModal({ open: true, meeting: item }) }
+    else if (type === 'note') { setActiveView('notes') }
+  }, [openEditTask])
 
   const saveEventNote = useCallback((eventId, note) => {
     setEventNotes(prev => {
@@ -179,6 +191,8 @@ function AppMain({ sync }) {
         e.preventDefault()
         openAddTask({ dueDate: activeView === 'do' ? new Date().toISOString().split('T')[0] : null })
       }
+      if (e.key === '/' && !e.metaKey && !e.ctrlKey && !e.altKey) { e.preventDefault(); setSearchOpen(true) }
+      if (e.key === 'k' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); setSearchOpen(true) }
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
@@ -196,13 +210,15 @@ function AppMain({ sync }) {
   const renderView = () => {
     switch (effectiveView) {
       case 'do':
-        return <DoView todayTasks={filterByClient(todayTasks)} top3Tasks={filterByClient(top3Tasks)} missedTasks={filterByClient(missedTasks)}
-          companies={companies} projects={projects} onAdd={openAddTask} onComplete={handleComplete} onUncomplete={uncompleteTask} onEdit={openEditTask} onDelete={deleteTask}
+        return <DoView todayTasks={filterByClient(todayTasks)} top3Tasks={filterByClient(top3Tasks)} missedTasks={filterByClient(missedTasks)} unscheduledTasks={filterByClient(unscheduledTasks)}
+          companies={companies} projects={projects} onAdd={openAddTask} onComplete={handleComplete} onUncomplete={uncompleteTask} onEdit={openEditTask} onDelete={deleteTask} onReschedule={rescheduleTask}
           completedToday={completedToday} timer={timer} onToggleTimer={timer.toggle} onToggleSubtask={toggleSubtask} onBreakdown={openBreakdown} onToggleTop3={toggleTop3} />
       case 'week':
         return <WeekBoard allTasks={filterByClient(allThisWeekTasks)} companies={companies} projects={filterByClient(activeProjects)}
           onAdd={openAddTask} onComplete={handleComplete} onEdit={openEditTask} onReschedule={rescheduleTask}
           onOpenProject={(p) => openProjectDetail(p)} />
+      case 'alltasks':
+        return <AllTasks tasks={tasks} companies={companies} projects={projects} activeClient={activeClient} onAdd={openAddTask} taskCardProps={taskCardProps} />
       case 'projects': {
         if (detailProject) {
           const liveProject = projects.find(p => p.id === detailProject.id) || detailProject
@@ -274,7 +290,7 @@ function AppMain({ sync }) {
           onEditSprint={() => setActiveView('sprint')} companies={companies} activeClient={activeClient} onSelectClient={setActiveClient}
           onNewTask={() => openAddTask({ dueDate: new Date().toISOString().split('T')[0] })} onNewProject={() => openAddProject({ companyId: activeClient })}
           onNewMeeting={() => setMeetingModal({ open: true, meeting: {} })} onBriefing={() => setActiveView('briefing')}
-          syncStatus={sync.syncStatus} lastSynced={sync.lastSynced} userEmail={sync.userEmail} onSignOut={sync.signOut} />
+          syncStatus={sync.syncStatus} lastSynced={sync.lastSynced} userEmail={sync.userEmail} onSignOut={sync.signOut} onSearch={() => setSearchOpen(true)} />
         <div className="flex-1 overflow-hidden pb-14 md:pb-0">{renderView()}</div>
       </div>
       <MobileNav activeView={effectiveView} setActiveView={setActiveView} missedCount={missedCount} />
@@ -282,6 +298,7 @@ function AppMain({ sync }) {
       {meetingModal.open && <MeetingModal meeting={meetingModal.meeting} companies={companies} projects={projects} onSave={handleSaveMeeting} onClose={() => setMeetingModal({ open: false, meeting: null })} />}
       {projectModal.open && <ProjectModal project={projectModal.project} companies={companies} goals={goals} defaultCompanyId={projectModal.project?.companyId} onSave={handleSaveProject} onClose={() => setProjectModal({ open: false, project: null })} />}
       {breakdownModal.open && <BreakdownModal task={breakdownModal.task} apiKey={settings.anthropicKey} onApply={applyBreakdown} onClose={() => setBreakdownModal({ open: false, task: null })} />}
+      {searchOpen && <SearchOverlay tasks={tasks} projects={projects} meetings={meetings} companies={companies} notes={notes} onClose={() => setSearchOpen(false)} onGoto={handleSearchGoto} />}
       <Toast toast={toast} onAction={handleToastUndo} onDismiss={() => setToast(null)} />
       <CelebrationBurst active={celebration} onDone={() => setCelebration(false)} />
     </div>
