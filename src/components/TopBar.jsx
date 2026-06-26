@@ -6,7 +6,7 @@ export function TopBar({
   sprint, currentWeek, progress, vision, onSaveVision, onEditSprint,
   companies, activeClient, onSelectClient,
   onNewTask, onNewProject, onNewMeeting, onBriefing,
-  syncStatus, lastSynced, userEmail, onSignOut, onSearch,
+  syncStatus, lastSynced, userEmail, onSignOut, onSearch, timerSlot,
 }) {
   const [whyOpen, setWhyOpen] = useState(false)
   const [editingWhy, setEditingWhy] = useState(false)
@@ -43,6 +43,9 @@ export function TopBar({
             </>
           )}
         </div>
+
+        {/* Global timer */}
+        {timerSlot}
 
         {/* Sprint progress */}
         {sprint && (

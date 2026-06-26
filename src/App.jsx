@@ -46,6 +46,7 @@ import { useSync } from './hooks/useSync'
 import { Login } from './components/Login'
 import { SyncIndicator } from './components/SyncIndicator'
 import { SearchOverlay } from './components/SearchOverlay'
+import { GlobalTimer } from './components/GlobalTimer'
 
 function AppMain({ sync }) {
   const [activeView, setActiveView] = useState('do')
@@ -63,7 +64,7 @@ function AppMain({ sync }) {
 
   const {
     tasks, todayTasks, allThisWeekTasks, missedTasks, top3Tasks, unscheduledTasks, completedToday,
-    tasksForProject, saveTask, completeTask, uncompleteTask, deleteTask,
+    tasksForProject, saveTask, completeTask, uncompleteTask, deleteTask, bulkUpdate, bulkDelete,
     toggleTop3, setSubtasks, toggleSubtask, addTimeEntry, addManualTimeEntry, updateTimeEntry, deleteTimeEntry, setResources,
   } = useTasks()
 
@@ -101,6 +102,11 @@ function AppMain({ sync }) {
   }, [saveTask])
 
   const reopenProject = useCallback((id) => { updateProject(id, { status: 'active' }) }, [updateProject])
+
+  const createTaskWithTime = useCallback((data, seconds) => {
+    const t = saveTask({ ...data, dueDate: data.dueDate || new Date().toISOString().split('T')[0], priority: 'medium' })
+    if (t?.id) addTimeEntry(t.id, seconds)
+  }, [saveTask, addTimeEntry])
 
   const openProjectDetail = useCallback((project) => {
     setDetailProject(project)
@@ -218,7 +224,7 @@ function AppMain({ sync }) {
           onAdd={openAddTask} onComplete={handleComplete} onEdit={openEditTask} onReschedule={rescheduleTask}
           onOpenProject={(p) => openProjectDetail(p)} />
       case 'alltasks':
-        return <AllTasks tasks={tasks} companies={companies} projects={projects} activeClient={activeClient} onAdd={openAddTask} taskCardProps={taskCardProps} />
+        return <AllTasks tasks={tasks} companies={companies} projects={projects} activeClient={activeClient} onAdd={openAddTask} taskCardProps={taskCardProps} onBulkUpdate={bulkUpdate} onBulkDelete={bulkDelete} />
       case 'projects': {
         if (detailProject) {
           const liveProject = projects.find(p => p.id === detailProject.id) || detailProject
@@ -245,7 +251,7 @@ function AppMain({ sync }) {
       case 'goals':
         return <Goals goals={filterByClient(goals)} vision={vision} companies={companies} activeClient={activeClient} onAddGoal={addGoal} onUpdateGoal={updateGoal} onDeleteGoal={deleteGoal} onSaveVision={saveVision} />
       case 'hours':
-        return <Hours tasks={filterByClient(tasks)} companies={companies} projects={projects} invoiceProfile={invoiceProfile} onSaveProfile={saveProfile} onSaveInvoice={saveInvoice} />
+        return <Hours tasks={filterByClient(tasks)} companies={companies} projects={projects} invoiceProfile={invoiceProfile} onSaveProfile={saveProfile} onSaveInvoice={saveInvoice} onEditTask={(id) => { const t = tasks.find(x => x.id === id); if (t) openEditTask(t) }} />
       case 'review':
         return <WeeklyReview tasks={tasks} companies={companies} currentWeek={currentWeek} sprint={sprint} onEditTask={(t) => rescheduleTask(t.id, t.dueDate)} onAddTask={openAddTask} />
       case 'briefing':
@@ -290,7 +296,8 @@ function AppMain({ sync }) {
           onEditSprint={() => setActiveView('sprint')} companies={companies} activeClient={activeClient} onSelectClient={setActiveClient}
           onNewTask={() => openAddTask({ dueDate: new Date().toISOString().split('T')[0] })} onNewProject={() => openAddProject({ companyId: activeClient })}
           onNewMeeting={() => setMeetingModal({ open: true, meeting: {} })} onBriefing={() => setActiveView('briefing')}
-          syncStatus={sync.syncStatus} lastSynced={sync.lastSynced} userEmail={sync.userEmail} onSignOut={sync.signOut} onSearch={() => setSearchOpen(true)} />
+          syncStatus={sync.syncStatus} lastSynced={sync.lastSynced} userEmail={sync.userEmail} onSignOut={sync.signOut} onSearch={() => setSearchOpen(true)}
+          timerSlot={<GlobalTimer timer={timer} tasks={tasks} companies={companies} projects={projects} onLogTime={addTimeEntry} onCreateTaskWithTime={createTaskWithTime} />} />
         <div className="flex-1 overflow-hidden pb-14 md:pb-0">{renderView()}</div>
       </div>
       <MobileNav activeView={effectiveView} setActiveView={setActiveView} missedCount={missedCount} />

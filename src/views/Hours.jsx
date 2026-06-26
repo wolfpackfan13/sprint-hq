@@ -1,10 +1,10 @@
 import { useState } from 'react'
-import { Clock, FileText, Download, ChevronDown, ChevronUp, DollarSign, Settings2 } from 'lucide-react'
+import { Clock, FileText, Download, ChevronDown, ChevronUp, DollarSign, Settings2, Pencil } from 'lucide-react'
 import { dateUtils } from '../utils/dateUtils'
 import { timeUtils } from '../utils/timeUtils'
 import { generateInvoicePDF } from '../utils/invoicePDF'
 
-export function Hours({ tasks, companies, projects, invoiceProfile, onSaveProfile, onSaveInvoice }) {
+export function Hours({ tasks, companies, projects, invoiceProfile, onSaveProfile, onSaveInvoice, onEditTask }) {
   const [expandedClient, setExpandedClient] = useState(null)
   const [showProfile, setShowProfile] = useState(false)
   const [range, setRange] = useState('week') // week | month | all
@@ -120,10 +120,13 @@ export function Hours({ tasks, companies, projects, invoiceProfile, onSaveProfil
                     {cd.taskBreakdown.map(tb => {
                       const project = projects.find(p => p.id === tb.projectId)
                       return (
-                        <div key={tb.id} className="flex items-center justify-between text-sm">
-                          <span className="text-navy-600 flex-1 min-w-0 truncate">{project ? `${project.name}: ` : ''}{tb.title}</span>
-                          <span className="text-navy-400 flex-shrink-0 ml-2">{timeUtils.formatDuration(tb.seconds)}</span>
-                        </div>
+                        <button key={tb.id} onClick={() => onEditTask && onEditTask(tb.id)} className="w-full flex items-center justify-between text-sm hover:bg-white rounded-lg px-2 py-1.5 -mx-2 transition-colors group">
+                          <span className="text-navy-600 flex-1 min-w-0 truncate text-left">{project ? `${project.name}: ` : ''}{tb.title}</span>
+                          <span className="text-navy-400 flex-shrink-0 ml-2 flex items-center gap-1.5">
+                            {timeUtils.formatDuration(tb.seconds)}
+                            <Pencil size={11} className="opacity-0 group-hover:opacity-100 transition-opacity" />
+                          </span>
+                        </button>
                       )
                     })}
                     {cd.company.billable && (

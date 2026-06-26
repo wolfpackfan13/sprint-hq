@@ -1,9 +1,17 @@
 import { useState, useMemo } from 'react'
-import { Plus, ListTodo, ChevronDown, ChevronRight, CheckCircle2 } from 'lucide-react'
+import { Plus, ListTodo, ChevronDown, ChevronRight, CheckCircle2, CheckSquare, Square } from 'lucide-react'
+import { BulkActionBar } from '../components/BulkActionBar'
 import { TaskCard } from '../components/TaskCard'
 import { dateUtils } from '../utils/dateUtils'
 
-export function AllTasks({ tasks, companies, projects, activeClient, onAdd, taskCardProps }) {
+export function AllTasks({ tasks, companies, projects, activeClient, onAdd, taskCardProps, onBulkUpdate, onBulkDelete }) {
+  const [selectMode, setSelectMode] = useState(false)
+  const [selected, setSelected] = useState(new Set())
+
+  const toggleSel = (id) => setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
+  const clearSel = () => { setSelected(new Set()); setSelectMode(false) }
+  const ids = [...selected]
+
   const [showCompleted, setShowCompleted] = useState(false)
 
   const today = dateUtils.today()
@@ -60,6 +68,12 @@ export function AllTasks({ tasks, companies, projects, activeClient, onAdd, task
           </div>
           <button onClick={() => onAdd({})} className="btn-primary px-4 py-2 text-sm flex items-center gap-1.5"><Plus size={15} /> New</button>
         </div>
+        <div className="flex items-center justify-between">
+          <button onClick={() => { setSelectMode(m => !m); setSelected(new Set()) }} className={`text-xs font-display font-semibold px-3 py-1.5 rounded-lg border transition-all ${selectMode ? 'bg-navy-800 border-navy-800 text-white' : 'border-surface-300 text-navy-500 hover:border-navy-400'}`}>
+            {selectMode ? 'Cancel' : 'Select'}
+          </button>
+          {selectMode && <span className="text-xs text-navy-400">{selected.size} selected · tap tasks to select</span>}
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-5 max-w-2xl mx-auto w-full">
@@ -81,7 +95,18 @@ export function AllTasks({ tasks, companies, projects, activeClient, onAdd, task
                 <span className="text-[10px] text-navy-400">{items.length}</span>
               </div>
               <div className="space-y-2">
-                {items.map(t => <TaskCard key={t.id} task={t} {...taskCardProps} showDate />)}
+                {items.map(t => (
+                  selectMode ? (
+                    <button key={t.id} onClick={() => toggleSel(t.id)} className="w-full flex items-center gap-2 text-left">
+                      <span className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 ${selected.has(t.id) ? 'bg-gold-500 border-gold-500' : 'border-surface-400'}`}>
+                        {selected.has(t.id) && <CheckSquare size={12} className="text-white" />}
+                      </span>
+                      <div className="flex-1 min-w-0 pointer-events-none">
+                        <TaskCard task={t} {...taskCardProps} showDate />
+                      </div>
+                    </button>
+                  ) : <TaskCard key={t.id} task={t} {...taskCardProps} showDate />
+                ))}
               </div>
             </div>
           )
@@ -103,6 +128,19 @@ export function AllTasks({ tasks, companies, projects, activeClient, onAdd, task
           </div>
         )}
       </div>
+
+      {selectMode && selected.size > 0 && (
+        <BulkActionBar
+          count={selected.size}
+          companies={companies}
+          projects={projects}
+          onAssignClient={(companyId) => { onBulkUpdate(ids, { companyId }); clearSel() }}
+          onAssignProject={(projectId, companyId) => { onBulkUpdate(ids, { projectId, companyId }); clearSel() }}
+          onSetDue={(dueDate) => { onBulkUpdate(ids, { dueDate }); clearSel() }}
+          onDelete={() => { if (window.confirm(`Delete ${selected.size} tasks?`)) { onBulkDelete(ids); clearSel() } }}
+          onClear={clearSel}
+        />
+      )}
     </div>
   )
 }

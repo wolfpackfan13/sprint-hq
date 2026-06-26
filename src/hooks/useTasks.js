@@ -41,6 +41,16 @@ export function useTasks() {
     setTasks(prev => persist(prev.filter(t => t.id !== id)))
   }, [])
 
+  const bulkUpdate = useCallback((ids, updates) => {
+    const idSet = new Set(ids)
+    setTasks(prev => persist(prev.map(t => idSet.has(t.id) ? { ...t, ...updates } : t)))
+  }, [])
+
+  const bulkDelete = useCallback((ids) => {
+    const idSet = new Set(ids)
+    setTasks(prev => persist(prev.filter(t => !idSet.has(t.id))))
+  }, [])
+
   const completeTask = useCallback((id) => {
     setTasks(prev => persist(prev.map(t =>
       t.id === id ? { ...t, status: 'done', completedAt: new Date().toISOString() } : t
@@ -151,7 +161,7 @@ export function useTasks() {
     top3Tasks,
     completedToday,
     tasksForProject,
-    addTask, updateTask, deleteTask, completeTask, uncompleteTask, saveTask,
+    addTask, updateTask, deleteTask, bulkUpdate, bulkDelete, completeTask, uncompleteTask, saveTask,
     toggleTop3, setSubtasks, toggleSubtask, addTimeEntry, addManualTimeEntry, updateTimeEntry, deleteTimeEntry, setResources,
   }
 }
