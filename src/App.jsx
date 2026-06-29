@@ -78,7 +78,10 @@ function AppMain({ sync }) {
   const google = useGoogle(settings, saveGoogleToken, clearGoogleToken)
   const { projects, activeProjects, addProject, updateProject, deleteProject } = useProjects()
   const { invoices, profile: invoiceProfile, saveProfile, saveInvoice } = useInvoices()
-  const timer = useTimer((taskId, secs) => addTimeEntry(taskId, secs))
+  const timer = useTimer((session) => {
+    // Per-task quick toggle stop: log to the attached task if there is one
+    if (session?.taskId && session.seconds > 0) addTimeEntry(session.taskId, session.seconds)
+  })
 
   // ── Task handlers ──
   const openAddTask = useCallback((d = {}) => setTaskModal({ open: true, task: d }), [])
@@ -107,6 +110,35 @@ function AppMain({ sync }) {
     const t = saveTask({ ...data, dueDate: data.dueDate || new Date().toISOString().split('T')[0], priority: 'medium' })
     if (t?.id) addTimeEntry(t.id, seconds)
   }, [saveTask, addTimeEntry])
+
+  // Resolve a timer session (task / project / client-only) to a task and log time.
+  const logTimeSession = useCallback(({ companyId, projectId, taskId, seconds, title }) => {
+    if (!seconds || seconds < 1) return
+    if (taskId) { addTimeEntry(taskId, seconds); return }
+    // No task — find or create a general "Tracked time" task for this client/project
+    const label = title?.trim() || 'Tracked time'
+    let target = tasks.find(t =>
+      t.title === label && t.companyId === (companyId || null) && t.projectId === (projectId || null)
+    )
+    if (target) { addTimeEntry(target.id, seconds); return }
+    const created = saveTask({ title: label, companyId: companyId || null, projectId: projectId || null, dueDate: new Date().toISOString().split('T')[0], priority: 'low' })
+    if (created?.id) addTimeEntry(created.id, seconds)
+  }, [tasks, addTimeEntry, saveTask])
+
+  // Log a retroactive session with an explicit start/end (past time entry).
+  const logManualSession = useCallback(({ companyId, projectId, taskId, seconds, title, startISO }) => {
+    if (!seconds || seconds < 1) return
+    const resolveTask = () => {
+      if (taskId) return taskId
+      const label = title?.trim() || 'Tracked time'
+      const existing = tasks.find(t => t.title === label && t.companyId === (companyId || null) && t.projectId === (projectId || null))
+      if (existing) return existing.id
+      const created = saveTask({ title: label, companyId: companyId || null, projectId: projectId || null, dueDate: new Date().toISOString().split('T')[0], priority: 'low' })
+      return created?.id
+    }
+    const tid = resolveTask()
+    if (tid) addManualTimeEntry(tid, seconds, startISO ? startISO.split('T')[0] : null)
+  }, [tasks, addManualTimeEntry, saveTask])
 
   const openProjectDetail = useCallback((project) => {
     setDetailProject(project)
@@ -297,7 +329,7 @@ function AppMain({ sync }) {
           onNewTask={() => openAddTask({ dueDate: new Date().toISOString().split('T')[0] })} onNewProject={() => openAddProject({ companyId: activeClient })}
           onNewMeeting={() => setMeetingModal({ open: true, meeting: {} })} onBriefing={() => setActiveView('briefing')}
           syncStatus={sync.syncStatus} lastSynced={sync.lastSynced} userEmail={sync.userEmail} onSignOut={sync.signOut} onSearch={() => setSearchOpen(true)}
-          timerSlot={<GlobalTimer timer={timer} tasks={tasks} companies={companies} projects={projects} onLogTime={addTimeEntry} onCreateTaskWithTime={createTaskWithTime} />} />
+          timerSlot={<GlobalTimer timer={timer} tasks={tasks} companies={companies} projects={projects} onLogSession={logTimeSession} onLogManual={logManualSession} />} />
         <div className="flex-1 overflow-hidden pb-14 md:pb-0">{renderView()}</div>
       </div>
       <MobileNav activeView={effectiveView} setActiveView={setActiveView} missedCount={missedCount} />
