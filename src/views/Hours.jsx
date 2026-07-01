@@ -7,21 +7,40 @@ import { generateInvoicePDF } from '../utils/invoicePDF'
 export function Hours({ tasks, companies, projects, invoiceProfile, onSaveProfile, onSaveInvoice, onEditTask }) {
   const [expandedClient, setExpandedClient] = useState(null)
   const [showProfile, setShowProfile] = useState(false)
-  const [range, setRange] = useState('week') // week | month | all
+  const [range, setRange] = useState('month') // week | month | all | custom
+  const [customStart, setCustomStart] = useState(() => {
+    const d = new Date(); d.setDate(1); return d.toISOString().split('T')[0]
+  })
+  const [customEnd, setCustomEnd] = useState(() => new Date().toISOString().split('T')[0])
   const [profile, setProfile] = useState(invoiceProfile)
 
   const billableCompanies = companies.filter(c => c.billable)
 
-  // Filter time entries by range
+  // Resolve the active [start, end] date strings for the current range
+  const resolveWindow = () => {
+    const today = new Date()
+    const iso = (d) => d.toISOString().split('T')[0]
+    if (range === 'all') return { start: null, end: null }
+    if (range === 'custom') return { start: customStart, end: customEnd }
+    if (range === 'week') {
+      const s = new Date(today); const day = today.getDay(); const diff = day === 0 ? -6 : 1 - day
+      s.setDate(today.getDate() + diff)
+      const e = new Date(s); e.setDate(s.getDate() + 6)
+      return { start: iso(s), end: iso(e) }
+    }
+    // month
+    const s = new Date(today.getFullYear(), today.getMonth(), 1)
+    const e = new Date(today.getFullYear(), today.getMonth() + 1, 0)
+    return { start: iso(s), end: iso(e) }
+  }
+  const windowRange = resolveWindow()
+
+  // Filter time entries by the resolved window (inclusive)
   const inRange = (entry) => {
     if (range === 'all') return true
-    const d = entry.end?.split('T')[0]
-    if (range === 'week') return dateUtils.isThisWeek(d)
-    if (range === 'month') {
-      const now = new Date(), ed = new Date(d + 'T12:00:00')
-      return ed.getMonth() === now.getMonth() && ed.getFullYear() === now.getFullYear()
-    }
-    return true
+    const d = (entry.end || entry.start || '').split('T')[0]
+    if (!d) return false
+    return (!windowRange.start || d >= windowRange.start) && (!windowRange.end || d <= windowRange.end)
   }
 
   // Aggregate hours by client
@@ -59,7 +78,8 @@ export function Hours({ tasks, companies, projects, invoiceProfile, onSaveProfil
       profile,
       lineItems,
       total: clientInfo.amount,
-      periodLabel: range === 'week' ? 'This Week' : range === 'month' ? 'This Month' : 'All Time',
+      periodLabel: range === 'week' ? 'This Week' : range === 'month' ? 'This Month' : range === 'all' ? 'All Time'
+        : `${dateUtils.format(customStart, 'medium')} – ${dateUtils.format(customEnd, 'medium')}`,
     }
     generateInvoicePDF(invoiceData)
     onSaveInvoice({ number: invoiceData.number, client: clientInfo.company.name, total: clientInfo.amount, date: invoiceData.date })
@@ -78,14 +98,21 @@ export function Hours({ tasks, companies, projects, invoiceProfile, onSaveProfil
           <button onClick={() => setShowProfile(true)} className="btn-ghost px-3 py-2 text-xs flex items-center gap-1.5"><Settings2 size={13} /> Business Info</button>
         </div>
         {/* Range toggle */}
-        <div className="flex gap-2">
-          {[['week','This Week'],['month','This Month'],['all','All Time']].map(([v,l]) => (
+        <div className="flex flex-wrap gap-2">
+          {[['week','This Week'],['month','This Month'],['all','All Time'],['custom','Custom']].map(([v,l]) => (
             <button key={v} onClick={() => setRange(v)}
               className={`text-xs font-display font-semibold px-3 py-1.5 rounded-lg border transition-all ${range === v ? 'bg-navy-800 border-navy-800 text-white' : 'border-surface-300 text-navy-500 hover:border-navy-400'}`}>
               {l}
             </button>
           ))}
         </div>
+        {range === 'custom' && (
+          <div className="flex items-center gap-2 mt-2 flex-wrap">
+            <input type="date" value={customStart} onChange={e => setCustomStart(e.target.value)} className="input-base px-2.5 py-1.5 text-xs" />
+            <span className="text-navy-400 text-xs">to</span>
+            <input type="date" value={customEnd} onChange={e => setCustomEnd(e.target.value)} className="input-base px-2.5 py-1.5 text-xs" />
+          </div>
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-3 max-w-3xl mx-auto w-full">
