@@ -104,6 +104,38 @@ export function useTasks() {
     })))
   }, [])
 
+  // Atomic: log time to an existing task, or find/create a target task and
+  // attach the entry — all in ONE setState so nothing is lost to a race.
+  // target = { taskId?, companyId?, projectId?, title? }
+  // opts = { dateStr? } — if provided, entry is dated (manual/past); else now.
+  const logTimeToTarget = useCallback((target, seconds, opts = {}) => {
+    if (!seconds || seconds < 1) return
+    const { taskId, companyId = null, projectId = null, title } = target
+    const { dateStr } = opts
+    const when = dateStr ? new Date(dateStr + 'T12:00:00').toISOString() : new Date().toISOString()
+    const makeEntry = () => ({ id: `te_${Date.now()}_${Math.random().toString(36).slice(2,6)}`, start: when, end: when, seconds, manual: !!dateStr })
+
+    setTasks(prev => {
+      // 1. Explicit task id
+      if (taskId) {
+        const exists = prev.some(t => t.id === taskId)
+        if (exists) return persist(prev.map(t => t.id === taskId ? { ...t, timeEntries: [...(t.timeEntries||[]), makeEntry()] } : t))
+      }
+      // 2. Find an existing matching "tracked time" task
+      const label = (title && title.trim()) || 'Tracked time'
+      const match = prev.find(t => t.title === label && (t.companyId||null) === companyId && (t.projectId||null) === projectId && t.status !== 'done')
+      if (match) return persist(prev.map(t => t.id === match.id ? { ...t, timeEntries: [...(t.timeEntries||[]), makeEntry()] } : t))
+      // 3. Create a new task WITH the entry already embedded (atomic)
+      const created = {
+        id: genId(), title: label, notes: '', companyId, projectId,
+        dueDate: dateStr || new Date().toISOString().split('T')[0], priority: 'low',
+        status: 'todo', isTop3: false, subtasks: [], timeEntries: [makeEntry()], resources: [],
+        createdAt: new Date().toISOString(), completedAt: null,
+      }
+      return persist([...prev, created])
+    })
+  }, [])
+
   const updateTimeEntry = useCallback((taskId, entryId, seconds) => {
     setTasks(prev => persist(prev.map(t => {
       if (t.id !== taskId) return t
@@ -123,8 +155,8 @@ export function useTasks() {
   }, [])
 
   const saveTask = useCallback((data) => {
-    if (data.id) updateTask(data.id, data)
-    else addTask(data)
+    if (data.id) { updateTask(data.id, data); return { id: data.id } }
+    return addTask(data)
   }, [addTask, updateTask])
 
   // ── Derived views ──────────────────────────────
@@ -162,6 +194,6 @@ export function useTasks() {
     completedToday,
     tasksForProject,
     addTask, updateTask, deleteTask, bulkUpdate, bulkDelete, completeTask, uncompleteTask, saveTask,
-    toggleTop3, setSubtasks, toggleSubtask, addTimeEntry, addManualTimeEntry, updateTimeEntry, deleteTimeEntry, setResources,
+    toggleTop3, setSubtasks, toggleSubtask, addTimeEntry, addManualTimeEntry, logTimeToTarget, updateTimeEntry, deleteTimeEntry, setResources,
   }
 }

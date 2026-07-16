@@ -65,7 +65,7 @@ function AppMain({ sync }) {
   const {
     tasks, todayTasks, allThisWeekTasks, missedTasks, top3Tasks, unscheduledTasks, completedToday,
     tasksForProject, saveTask, completeTask, uncompleteTask, deleteTask, bulkUpdate, bulkDelete,
-    toggleTop3, setSubtasks, toggleSubtask, addTimeEntry, addManualTimeEntry, updateTimeEntry, deleteTimeEntry, setResources,
+    toggleTop3, setSubtasks, toggleSubtask, addTimeEntry, addManualTimeEntry, logTimeToTarget, updateTimeEntry, deleteTimeEntry, setResources,
   } = useTasks()
 
   const { sprint, saveSprint, updateWeekGoal, updateSprintGoal, resetSprint, currentWeek, progress } = useSprint()
@@ -111,34 +111,15 @@ function AppMain({ sync }) {
     if (t?.id) addTimeEntry(t.id, seconds)
   }, [saveTask, addTimeEntry])
 
-  // Resolve a timer session (task / project / client-only) to a task and log time.
+  // Resolve a timer session (task / project / client-only) to a task and log time — atomic.
   const logTimeSession = useCallback(({ companyId, projectId, taskId, seconds, title }) => {
-    if (!seconds || seconds < 1) return
-    if (taskId) { addTimeEntry(taskId, seconds); return }
-    // No task — find or create a general "Tracked time" task for this client/project
-    const label = title?.trim() || 'Tracked time'
-    let target = tasks.find(t =>
-      t.title === label && t.companyId === (companyId || null) && t.projectId === (projectId || null)
-    )
-    if (target) { addTimeEntry(target.id, seconds); return }
-    const created = saveTask({ title: label, companyId: companyId || null, projectId: projectId || null, dueDate: new Date().toISOString().split('T')[0], priority: 'low' })
-    if (created?.id) addTimeEntry(created.id, seconds)
-  }, [tasks, addTimeEntry, saveTask])
+    logTimeToTarget({ taskId, companyId, projectId, title }, seconds)
+  }, [logTimeToTarget])
 
-  // Log a retroactive session with an explicit start/end (past time entry).
+  // Log a retroactive session with an explicit start date (past time entry) — atomic.
   const logManualSession = useCallback(({ companyId, projectId, taskId, seconds, title, startISO }) => {
-    if (!seconds || seconds < 1) return
-    const resolveTask = () => {
-      if (taskId) return taskId
-      const label = title?.trim() || 'Tracked time'
-      const existing = tasks.find(t => t.title === label && t.companyId === (companyId || null) && t.projectId === (projectId || null))
-      if (existing) return existing.id
-      const created = saveTask({ title: label, companyId: companyId || null, projectId: projectId || null, dueDate: new Date().toISOString().split('T')[0], priority: 'low' })
-      return created?.id
-    }
-    const tid = resolveTask()
-    if (tid) addManualTimeEntry(tid, seconds, startISO ? startISO.split('T')[0] : null)
-  }, [tasks, addManualTimeEntry, saveTask])
+    logTimeToTarget({ taskId, companyId, projectId, title }, seconds, { dateStr: startISO ? startISO.split('T')[0] : null })
+  }, [logTimeToTarget])
 
   const openProjectDetail = useCallback((project) => {
     setDetailProject(project)

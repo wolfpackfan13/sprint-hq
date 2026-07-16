@@ -7,10 +7,10 @@ function toTimeInput(ms) {
   const d = new Date(ms)
   return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`
 }
-// Apply an "HH:MM" string to today's date, return ms
-function timeInputToMs(hhmm) {
+// Apply an "HH:MM" string to a given date (YYYY-MM-DD, defaults today), return ms
+function timeInputToMs(hhmm, dateStr) {
   const [h, m] = hhmm.split(':').map(Number)
-  const d = new Date()
+  const d = dateStr ? new Date(dateStr + 'T00:00:00') : new Date()
   d.setHours(h, m, 0, 0)
   return d.getTime()
 }
@@ -76,6 +76,7 @@ export function GlobalTimer({ timer, tasks, companies, projects, onLogSession, o
   // past-time fields
   const [pastStart, setPastStart] = useState('09:00')
   const [pastEnd, setPastEnd] = useState('10:00')
+  const [pastDate, setPastDate] = useState(() => new Date().toISOString().split('T')[0])
 
   const openPanel = () => {
     if (timer.running) {
@@ -116,8 +117,8 @@ export function GlobalTimer({ timer, tasks, companies, projects, onLogSession, o
   }
 
   const logPast = () => {
-    let startMs = timeInputToMs(pastStart)
-    let endMs = timeInputToMs(pastEnd)
+    let startMs = timeInputToMs(pastStart, pastDate)
+    let endMs = timeInputToMs(pastEnd, pastDate)
     if (endMs <= startMs) endMs += 24 * 3600 * 1000 // crosses midnight guard (rare)
     const seconds = Math.floor((endMs - startMs) / 1000)
     if (seconds < 1) return
@@ -126,7 +127,7 @@ export function GlobalTimer({ timer, tasks, companies, projects, onLogSession, o
   }
 
   const pastSeconds = (() => {
-    let s = timeInputToMs(pastStart), e = timeInputToMs(pastEnd)
+    let s = timeInputToMs(pastStart, pastDate), e = timeInputToMs(pastEnd, pastDate)
     if (e <= s) e += 24 * 3600 * 1000
     return Math.floor((e - s) / 1000)
   })()
@@ -192,6 +193,10 @@ export function GlobalTimer({ timer, tasks, companies, projects, onLogSession, o
 
                   {mode === 'past' && (
                     <div className="card p-3 bg-surface-100 space-y-2">
+                      <div>
+                        <p className="text-[10px] text-navy-400 mb-1">Day</p>
+                        <input type="date" value={pastDate} max={new Date().toISOString().split('T')[0]} onChange={e => setPastDate(e.target.value)} className="w-full input-base px-2 py-1.5 text-sm" />
+                      </div>
                       <div className="flex items-center gap-2">
                         <div className="flex-1">
                           <p className="text-[10px] text-navy-400 mb-1">Start</p>
