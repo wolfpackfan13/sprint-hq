@@ -150,6 +150,80 @@ export function useTasks() {
     })))
   }, [])
 
+  // ── Ledger operations ──────────────────────────
+  // Patch arbitrary fields on one entry: seconds, start, end, note, billable, rate
+  const patchTimeEntry = useCallback((taskId, entryId, patch) => {
+    setTasks(prev => persist(prev.map(t => {
+      if (t.id !== taskId) return t
+      return { ...t, timeEntries: (t.timeEntries || []).map(e => e.id === entryId ? { ...e, ...patch } : e) }
+    })))
+  }, [])
+
+  // Move time entries. refs = [{ taskId, entryId }]
+  //   mode 'entry' — detach those entries and reattach them under the target
+  //   mode 'task'  — leave entries alone, retag their parent task(s) instead
+  // target = { companyId, projectId, taskId?, title? }
+  const moveTimeEntries = useCallback((refs, target, mode = 'entry') => {
+    if (!refs || refs.length === 0) return
+    setTasks(prev => {
+      if (mode === 'task') {
+        const taskIds = new Set(refs.map(r => r.taskId))
+        return persist(prev.map(t => taskIds.has(t.id)
+          ? { ...t,
+              companyId: target.companyId !== undefined ? target.companyId : t.companyId,
+              projectId: target.projectId !== undefined ? target.projectId : t.projectId }
+          : t))
+      }
+
+      // Entry mode: lift the entries out first, then land them in one pass
+      const byTask = {}
+      refs.forEach(r => { if (!byTask[r.taskId]) byTask[r.taskId] = new Set(); byTask[r.taskId].add(r.entryId) })
+      const moving = []
+      const next = prev.map(t => {
+        const ids = byTask[t.id]
+        if (!ids) return t
+        const keep = []
+        ;(t.timeEntries || []).forEach(e => { if (ids.has(e.id)) moving.push(e); else keep.push(e) })
+        return { ...t, timeEntries: keep }
+      })
+      if (moving.length === 0) return prev
+
+      if (target.taskId && next.some(t => t.id === target.taskId)) {
+        return persist(next.map(t => t.id === target.taskId
+          ? { ...t, timeEntries: [...(t.timeEntries || []), ...moving] } : t))
+      }
+
+      const companyId = target.companyId ?? null
+      const projectId = target.projectId ?? null
+      const label = (target.title && target.title.trim()) || 'Tracked time'
+      const match = next.find(t => t.title === label && (t.companyId || null) === companyId
+        && (t.projectId || null) === projectId && t.status !== 'done')
+      if (match) {
+        return persist(next.map(t => t.id === match.id
+          ? { ...t, timeEntries: [...(t.timeEntries || []), ...moving] } : t))
+      }
+
+      const created = {
+        id: genId(), title: label, notes: '', companyId, projectId,
+        dueDate: new Date().toISOString().split('T')[0], priority: 'low',
+        status: 'todo', isTop3: false, subtasks: [], timeEntries: moving, resources: [],
+        createdAt: new Date().toISOString(), completedAt: null,
+      }
+      return persist([...next, created])
+    })
+  }, [])
+
+  const deleteTimeEntries = useCallback((refs) => {
+    if (!refs || refs.length === 0) return
+    const byTask = {}
+    refs.forEach(r => { if (!byTask[r.taskId]) byTask[r.taskId] = new Set(); byTask[r.taskId].add(r.entryId) })
+    setTasks(prev => persist(prev.map(t => {
+      const ids = byTask[t.id]
+      if (!ids) return t
+      return { ...t, timeEntries: (t.timeEntries || []).filter(e => !ids.has(e.id)) }
+    })))
+  }, [])
+
   const setResources = useCallback((id, resources) => {
     setTasks(prev => persist(prev.map(t => t.id === id ? { ...t, resources } : t)))
   }, [])
@@ -195,5 +269,6 @@ export function useTasks() {
     tasksForProject,
     addTask, updateTask, deleteTask, bulkUpdate, bulkDelete, completeTask, uncompleteTask, saveTask,
     toggleTop3, setSubtasks, toggleSubtask, addTimeEntry, addManualTimeEntry, logTimeToTarget, updateTimeEntry, deleteTimeEntry, setResources,
+    patchTimeEntry, moveTimeEntries, deleteTimeEntries,
   }
 }

@@ -1,10 +1,15 @@
 import { useState } from 'react'
-import { Clock, FileText, Download, ChevronDown, ChevronUp, DollarSign, Settings2, Pencil } from 'lucide-react'
+import { Clock, Download, ChevronDown, ChevronUp, Settings2, Pencil, Table2, LayoutList } from 'lucide-react'
 import { dateUtils } from '../utils/dateUtils'
 import { timeUtils } from '../utils/timeUtils'
 import { generateInvoicePDF } from '../utils/invoicePDF'
+import { TimeLedger } from '../components/TimeLedger'
 
-export function Hours({ tasks, companies, projects, invoiceProfile, onSaveProfile, onSaveInvoice, onEditTask }) {
+export function Hours({
+  tasks, companies, projects, invoiceProfile, onSaveProfile, onSaveInvoice, onEditTask,
+  onPatchEntry, onMoveEntries, onDeleteEntries, onAddEntry,
+}) {
+  const [tab, setTab] = useState('summary')  // summary | ledger
   const [expandedClient, setExpandedClient] = useState(null)
   const [showProfile, setShowProfile] = useState(false)
   const [range, setRange] = useState('month') // week | month | all | custom
@@ -14,12 +19,10 @@ export function Hours({ tasks, companies, projects, invoiceProfile, onSaveProfil
   const [customEnd, setCustomEnd] = useState(() => new Date().toISOString().split('T')[0])
   const [profile, setProfile] = useState(invoiceProfile)
 
-  const billableCompanies = companies.filter(c => c.billable)
-
   // Resolve the active [start, end] date strings for the current range
   const resolveWindow = () => {
     const today = new Date()
-    const iso = (d) => d.toISOString().split('T')[0]
+    const iso = (d) => `${d.getFullYear()}-${timeUtils.pad2(d.getMonth()+1)}-${timeUtils.pad2(d.getDate())}`
     if (range === 'all') return { start: null, end: null }
     if (range === 'custom') return { start: customStart, end: customEnd }
     if (range === 'week') {
@@ -28,7 +31,6 @@ export function Hours({ tasks, companies, projects, invoiceProfile, onSaveProfil
       const e = new Date(s); e.setDate(s.getDate() + 6)
       return { start: iso(s), end: iso(e) }
     }
-    // month
     const s = new Date(today.getFullYear(), today.getMonth(), 1)
     const e = new Date(today.getFullYear(), today.getMonth() + 1, 0)
     return { start: iso(s), end: iso(e) }
@@ -38,38 +40,53 @@ export function Hours({ tasks, companies, projects, invoiceProfile, onSaveProfil
   // Filter time entries by the resolved window (inclusive)
   const inRange = (entry) => {
     if (range === 'all') return true
-    const d = (entry.end || entry.start || '').split('T')[0]
+    const d = timeUtils.localDate(entry.end || entry.start)
     if (!d) return false
     return (!windowRange.start || d >= windowRange.start) && (!windowRange.end || d <= windowRange.end)
   }
 
-  // Aggregate hours by client
+  // Aggregate hours by client, honoring per-entry billable and rate overrides
   const clientData = companies.map(co => {
     const coTasks = tasks.filter(t => t.companyId === co.id)
     let totalSecs = 0
+    let amount = 0
     const taskBreakdown = []
     coTasks.forEach(t => {
-      const secs = (t.timeEntries || []).filter(inRange).reduce((s, e) => s + e.seconds, 0)
-      if (secs > 0) {
-        totalSecs += secs
-        taskBreakdown.push({ id: t.id, title: t.title, seconds: secs, projectId: t.projectId })
-      }
+      const entries = (t.timeEntries || []).filter(inRange)
+      if (entries.length === 0) return
+      const secs = entries.reduce((s, e) => s + (e.seconds || 0), 0)
+      if (secs < 1) return
+      totalSecs += secs
+      const rateGroups = {}
+      entries.forEach(e => {
+        if (!timeUtils.isBillable(e, co)) return
+        const r = timeUtils.rateFor(e, co)
+        rateGroups[r] = (rateGroups[r] || 0) + (e.seconds || 0)
+      })
+      const taskAmount = Object.entries(rateGroups)
+        .reduce((s, [r, sec]) => s + timeUtils.toHours(sec) * Number(r), 0)
+      amount += taskAmount
+      taskBreakdown.push({ id: t.id, title: t.title, seconds: secs, projectId: t.projectId, rateGroups, amount: taskAmount })
     })
-    return { company: co, totalSecs, hours: timeUtils.toHours(totalSecs), taskBreakdown, amount: timeUtils.toHours(totalSecs) * (co.hourlyRate || 0) }
+    return { company: co, totalSecs, hours: timeUtils.toHours(totalSecs), taskBreakdown, amount }
   }).filter(c => c.totalSecs > 0)
 
   const grandTotalHours = clientData.reduce((s, c) => s + c.hours, 0)
-  const grandTotalBillable = clientData.filter(c => c.company.billable).reduce((s, c) => s + c.amount, 0)
+  const grandTotalBillable = clientData.reduce((s, c) => s + c.amount, 0)
 
   const handleGenerateInvoice = (clientInfo) => {
-    const lineItems = clientInfo.taskBreakdown.map(tb => {
+    const lineItems = []
+    clientInfo.taskBreakdown.forEach(tb => {
       const project = projects.find(p => p.id === tb.projectId)
-      return {
-        description: project ? `${project.name}: ${tb.title}` : tb.title,
-        hours: timeUtils.toHours(tb.seconds),
-        rate: clientInfo.company.hourlyRate,
-        amount: timeUtils.toHours(tb.seconds) * clientInfo.company.hourlyRate,
-      }
+      const base = project ? `${project.name}: ${tb.title}` : tb.title
+      const rates = Object.entries(tb.rateGroups)
+      rates.forEach(([r, sec]) => {
+        const hours = timeUtils.toHours(sec)
+        lineItems.push({
+          description: rates.length > 1 ? `${base} (@ $${r}/hr)` : base,
+          hours, rate: Number(r), amount: hours * Number(r),
+        })
+      })
     })
     const invoiceData = {
       number: profile.nextNumber || 1001,
@@ -79,24 +96,36 @@ export function Hours({ tasks, companies, projects, invoiceProfile, onSaveProfil
       lineItems,
       total: clientInfo.amount,
       periodLabel: range === 'week' ? 'This Week' : range === 'month' ? 'This Month' : range === 'all' ? 'All Time'
-        : `${dateUtils.format(customStart, 'medium')} – ${dateUtils.format(customEnd, 'medium')}`,
+        : `${dateUtils.format(customStart, 'medium')} to ${dateUtils.format(customEnd, 'medium')}`,
     }
     generateInvoicePDF(invoiceData)
     onSaveInvoice({ number: invoiceData.number, client: clientInfo.company.name, total: clientInfo.amount, date: invoiceData.date })
   }
 
   const saveProfileLocal = () => { onSaveProfile(profile); setShowProfile(false) }
+  const wide = tab === 'ledger' ? 'max-w-6xl' : 'max-w-3xl'
 
   return (
     <div className="h-full flex flex-col">
-      <div className="px-4 pt-5 pb-3 flex-shrink-0 max-w-3xl mx-auto w-full">
+      <div className={`px-4 pt-5 pb-3 flex-shrink-0 ${wide} mx-auto w-full`}>
         <div className="flex items-center justify-between mb-3">
           <div>
-            <h1 className="font-display font-bold text-navy-900 text-xl">Hours & Invoices</h1>
+            <h1 className="font-display font-bold text-navy-900 text-xl">Hours &amp; Invoices</h1>
             <p className="text-navy-500 text-sm mt-0.5">{grandTotalHours.toFixed(1)}h tracked · ${grandTotalBillable.toFixed(0)} billable</p>
           </div>
           <button onClick={() => setShowProfile(true)} className="btn-ghost px-3 py-2 text-xs flex items-center gap-1.5"><Settings2 size={13} /> Business Info</button>
         </div>
+
+        {/* Tabs */}
+        <div className="flex items-center gap-1 mb-3 border-b border-surface-200">
+          {[['summary', 'Summary', LayoutList], ['ledger', 'Ledger', Table2]].map(([v, l, Icon]) => (
+            <button key={v} onClick={() => setTab(v)}
+              className={`text-xs font-display font-semibold px-3 py-2 -mb-px border-b-2 flex items-center gap-1.5 transition-colors ${tab === v ? 'border-navy-800 text-navy-900' : 'border-transparent text-navy-400 hover:text-navy-600'}`}>
+              <Icon size={13} /> {l}
+            </button>
+          ))}
+        </div>
+
         {/* Range toggle */}
         <div className="flex flex-wrap gap-2">
           {[['week','This Week'],['month','This Month'],['all','All Time'],['custom','Custom']].map(([v,l]) => (
@@ -115,8 +144,14 @@ export function Hours({ tasks, companies, projects, invoiceProfile, onSaveProfil
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-3 max-w-3xl mx-auto w-full">
-        {clientData.length === 0 ? (
+      <div className={`flex-1 overflow-y-auto px-4 pb-4 space-y-3 ${wide} mx-auto w-full`}>
+        {tab === 'ledger' ? (
+          <TimeLedger
+            tasks={tasks} companies={companies} projects={projects}
+            windowRange={windowRange} rangeIsAll={range === 'all'}
+            onPatch={onPatchEntry} onMove={onMoveEntries} onDelete={onDeleteEntries} onAddEntry={onAddEntry}
+          />
+        ) : clientData.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-48 text-center">
             <Clock size={32} className="text-surface-400 mb-3" />
             <p className="font-display font-semibold text-navy-700">No time tracked yet</p>
@@ -136,7 +171,7 @@ export function Hours({ tasks, companies, projects, invoiceProfile, onSaveProfil
                     <p className="text-xs text-navy-400">{cd.hours.toFixed(1)} hours{cd.company.billable && ` · $${cd.company.hourlyRate}/hr`}</p>
                   </div>
                   <div className="text-right flex-shrink-0">
-                    {cd.company.billable
+                    {cd.amount > 0
                       ? <p className="font-display font-bold text-forest-600">${cd.amount.toFixed(0)}</p>
                       : <p className="text-xs text-navy-400 italic">non-billable</p>}
                   </div>
@@ -156,12 +191,11 @@ export function Hours({ tasks, companies, projects, invoiceProfile, onSaveProfil
                         </button>
                       )
                     })}
-                    {cd.company.billable && (
+                    {cd.amount > 0 ? (
                       <button onClick={() => handleGenerateInvoice(cd)} className="w-full mt-2 btn-primary py-2.5 text-sm flex items-center justify-center gap-2">
                         <Download size={14} /> Generate Invoice PDF (${cd.amount.toFixed(0)})
                       </button>
-                    )}
-                    {!cd.company.billable && (
+                    ) : (
                       <p className="text-xs text-navy-400 text-center pt-1">Mark this client billable in Settings to invoice</p>
                     )}
                   </div>

@@ -66,6 +66,7 @@ function AppMain({ sync }) {
     tasks, todayTasks, allThisWeekTasks, missedTasks, top3Tasks, unscheduledTasks, completedToday,
     tasksForProject, saveTask, completeTask, uncompleteTask, deleteTask, bulkUpdate, bulkDelete,
     toggleTop3, setSubtasks, toggleSubtask, addTimeEntry, addManualTimeEntry, logTimeToTarget, updateTimeEntry, deleteTimeEntry, setResources,
+    patchTimeEntry, moveTimeEntries, deleteTimeEntries,
   } = useTasks()
 
   const { sprint, saveSprint, updateWeekGoal, updateSprintGoal, resetSprint, currentWeek, progress } = useSprint()
@@ -264,7 +265,10 @@ function AppMain({ sync }) {
       case 'goals':
         return <Goals goals={filterByClient(goals)} vision={vision} companies={companies} activeClient={activeClient} onAddGoal={addGoal} onUpdateGoal={updateGoal} onDeleteGoal={deleteGoal} onSaveVision={saveVision} />
       case 'hours':
-        return <Hours tasks={filterByClient(tasks)} companies={companies} projects={projects} invoiceProfile={invoiceProfile} onSaveProfile={saveProfile} onSaveInvoice={saveInvoice} onEditTask={(id) => { const t = tasks.find(x => x.id === id); if (t) openEditTask(t) }} />
+        return <Hours tasks={filterByClient(tasks)} companies={companies} projects={projects} invoiceProfile={invoiceProfile} onSaveProfile={saveProfile} onSaveInvoice={saveInvoice}
+          onEditTask={(id) => { const t = tasks.find(x => x.id === id); if (t) openEditTask(t) }}
+          onPatchEntry={patchTimeEntry} onMoveEntries={moveTimeEntries} onDeleteEntries={deleteTimeEntries}
+          onAddEntry={({ companyId, projectId, taskId, seconds, dateStr, title }) => logTimeToTarget({ taskId, companyId, projectId, title }, seconds, { dateStr })} />
       case 'review':
         return <WeeklyReview tasks={tasks} companies={companies} currentWeek={currentWeek} sprint={sprint} onEditTask={(t) => rescheduleTask(t.id, t.dueDate)} onAddTask={openAddTask} />
       case 'briefing':
