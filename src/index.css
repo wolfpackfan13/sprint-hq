@@ -93,4 +93,18 @@
   .focus-overlay {
     background: linear-gradient(135deg, #F7F8FC 0%, #EFF2FA 100%);
   }
+
+  /* Bottom-sheet sizing: dvh so mobile browser chrome can't push the
+     sheet (and its action button) below the visible screen. */
+  .sheet-overlay { height: 100vh; }
+  .sheet-shell { max-height: 88vh; }
+  /* @supports (not a duplicate declaration) so the vh fallback survives minification */
+  @supports (height: 100dvh) {
+    .sheet-overlay { height: 100dvh; }
+    .sheet-shell { max-height: 88dvh; }
+  }
+  /* Pinned sheet footer — clears the iOS home indicator. */
+  .sheet-footer {
+    padding-bottom: calc(1.25rem + env(safe-area-inset-bottom, 0px));
+  }
 }

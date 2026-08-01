@@ -148,14 +148,14 @@ export function GlobalTimer({ timer, tasks, companies, projects, onLogSession, o
 
       {/* Control panel */}
       {open && (
-        <div className="fixed inset-0 bg-navy-900/50 backdrop-blur-sm flex items-end md:items-center justify-center z-[70] p-0 md:p-4" onClick={e => e.target === e.currentTarget && setOpen(false)}>
-          <div className="bg-white rounded-t-2xl md:rounded-2xl w-full md:max-w-md shadow-modal max-h-[88vh] overflow-y-auto">
-            <div className="flex items-center justify-between px-5 pt-5 pb-3">
+        <div className="fixed inset-x-0 top-0 sheet-overlay bg-navy-900/50 backdrop-blur-sm flex items-end md:items-center justify-center z-[70] p-0 md:p-4" onClick={e => e.target === e.currentTarget && setOpen(false)}>
+          <div className="bg-white rounded-t-2xl md:rounded-2xl w-full md:max-w-md shadow-modal sheet-shell flex flex-col">
+            <div className="flex items-center justify-between px-5 pt-5 pb-3 flex-shrink-0">
               <h2 className="font-display font-bold text-navy-900 flex items-center gap-2"><TimerIcon size={17} className="text-gold-500" /> Time Tracker</h2>
               <button onClick={() => setOpen(false)} className="p-1.5 text-navy-400 hover:text-navy-700"><X size={18} /></button>
             </div>
 
-            <div className="px-5 pb-5 space-y-4">
+            <div className="px-5 pb-4 space-y-4 flex-1 overflow-y-auto">
               {timer.running ? (
                 <>
                   {/* Running display */}
@@ -180,8 +180,6 @@ export function GlobalTimer({ timer, tasks, companies, projects, onLogSession, o
                   {!assign.taskId && (
                     <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Label (optional, e.g. 'Site visit')" className="w-full input-base px-3 py-2 text-sm" />
                   )}
-
-                  <button onClick={stopAndLog} className="w-full btn-primary py-3 text-sm flex items-center justify-center gap-2"><Square size={14} fill="currentColor" /> Stop & Log {timeUtils.formatClock(timer.elapsed)}</button>
                 </>
               ) : (
                 <>
@@ -216,12 +214,17 @@ export function GlobalTimer({ timer, tasks, companies, projects, onLogSession, o
                   {!assign.taskId && (
                     <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Label (optional, e.g. 'Site visit')" className="w-full input-base px-3 py-2 text-sm" />
                   )}
-
-                  {mode === 'live'
-                    ? <button onClick={startNow} className="w-full btn-primary py-3 text-sm flex items-center justify-center gap-2"><Play size={14} fill="currentColor" /> Start Timer</button>
-                    : <button onClick={logPast} disabled={pastSeconds < 1} className="w-full btn-primary py-3 text-sm flex items-center justify-center gap-2"><Clock size={14} /> Log {timeUtils.formatDuration(pastSeconds)}</button>}
                 </>
               )}
+            </div>
+
+            {/* Pinned action — stays on screen no matter how long the list above gets */}
+            <div className="flex-shrink-0 px-5 pt-3 border-t border-surface-200 bg-white rounded-b-2xl sheet-footer">
+              {timer.running
+                ? <button onClick={stopAndLog} className="w-full btn-primary py-3 text-sm flex items-center justify-center gap-2"><Square size={14} fill="currentColor" /> Stop & Log {timeUtils.formatClock(timer.elapsed)}</button>
+                : mode === 'live'
+                  ? <button onClick={startNow} className="w-full btn-primary py-3 text-sm flex items-center justify-center gap-2"><Play size={14} fill="currentColor" /> Start Timer</button>
+                  : <button onClick={logPast} disabled={pastSeconds < 1} className="w-full btn-primary py-3 text-sm flex items-center justify-center gap-2"><Clock size={14} /> Log {timeUtils.formatDuration(pastSeconds)}</button>}
             </div>
           </div>
         </div>
