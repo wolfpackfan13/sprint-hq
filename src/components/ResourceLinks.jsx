@@ -4,6 +4,10 @@ import { genId as makeId } from '../utils/ids'
 
 const genId = () => makeId('res')
 
+// Only http(s) may reach an href. A 'javascript:' or 'data:' URL in a resource
+// field would execute on click with access to this origin's localStorage.
+const safeUrl = (u) => (/^https?:\/\//i.test(String(u ?? '').trim()) ? String(u).trim() : '#')
+
 // Guess a friendly label from a URL
 function autoLabel(url) {
   try {
@@ -46,7 +50,7 @@ export function ResourceLinks({ resources = [], onChange, compact = false }) {
         <div className="space-y-1">
           {resources.map(r => (
             <div key={r.id} className="flex items-center gap-2 group">
-              <a href={r.url} target="_blank" rel="noreferrer"
+              <a href={safeUrl(r.url)} target="_blank" rel="noreferrer"
                 className="flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-700 hover:underline flex-1 min-w-0">
                 <Link2 size={11} className="flex-shrink-0" />
                 <span className="truncate">{r.label}</span>

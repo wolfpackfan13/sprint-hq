@@ -12,6 +12,7 @@ import { useProjects } from './hooks/useProjects'
 import { useInvoices } from './hooks/useInvoices'
 import { useTimer } from './hooks/useTimer'
 import { storage } from './utils/storage'
+import { stripDeviceLocal } from './utils/dataMap'
 
 import { TopBar } from './components/TopBar'
 import { Sidebar } from './components/Sidebar'
@@ -196,7 +197,10 @@ function AppMain({ sync }) {
   // ── Backup ──
   const handleBackup = useCallback(async () => {
     const data = {}
-    ;['tasks','sprint','notes','contacts','meetings','goals','vision','companies','projects','invoices','invoiceProfile','settings'].forEach(k => { data[k] = storage.get(k, null) })
+    // stripDeviceLocal keeps the Anthropic key and Google OAuth token out of
+    // the exported file. A Drive backup is plaintext JSON with a predictable
+    // name, it can be link-shared, and it syncs to any machine running Drive.
+    ;['tasks','sprint','notes','contacts','meetings','goals','vision','companies','projects','invoices','invoiceProfile','settings'].forEach(k => { data[k] = stripDeviceLocal(k, storage.get(k, null)) })
     data.exportedAt = new Date().toISOString()
     return google.backupToDrive(data)
   }, [google])
