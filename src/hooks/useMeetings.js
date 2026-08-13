@@ -1,8 +1,9 @@
 import { useState, useCallback } from 'react'
 import { storage } from '../utils/storage'
 import { dateUtils } from '../utils/dateUtils'
+import { genId as makeId } from '../utils/ids'
 
-const genId = (prefix = 'mtg') => `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2,6)}`
+const genId = (prefix = 'mtg') => makeId(prefix)
 
 export function useMeetings() {
   const [meetings, setMeetings] = useState(() => storage.get('meetings', []))

@@ -1,6 +1,6 @@
 import { supabase } from './supabase'
 import { storage } from './storage'
-import { FIELD_MAPS, TABLE_STORAGE_KEY, SINGLETON_KEYS, toRow, fromRow } from './dataMap'
+import { FIELD_MAPS, TABLE_STORAGE_KEY, SINGLETON_KEYS, DEVICE_LOCAL_FIELDS, toRow, fromRow, stripDeviceLocal, mergeDeviceLocal } from './dataMap'
 
 const TABLES = Object.keys(TABLE_STORAGE_KEY)
 
@@ -26,7 +26,10 @@ export async function pullAllFromCloud(userId) {
   if (stateErr) throw stateErr
   if (stateRows && stateRows.length > 0) {
     foundAny = true
-    stateRows.forEach(r => storage.setLocalOnly(r.key, r.value))
+    stateRows.forEach(r => {
+      const local = storage.get(r.key, null)
+      storage.setLocalOnly(r.key, mergeDeviceLocal(r.key, r.value, local))
+    })
   }
 
   return foundAny
@@ -48,14 +51,14 @@ export async function migrateBlobToTables(userId) {
     const arr = blob[key]
     if (Array.isArray(arr) && arr.length > 0) {
       const rows = arr.map(o => toRow(table, o, userId))
-      const { error } = await supabase.from(table).upsert(rows, { onConflict: 'id' })
+      const { error } = await supabase.from(table).upsert(rows, { onConflict: 'user_id,id' })
       if (error) throw error
     }
   }
   // Singletons
   const stateRows = SINGLETON_KEYS
     .filter(k => blob[k] !== undefined && blob[k] !== null)
-    .map(k => ({ user_id: userId, key: k, value: blob[k] }))
+    .map(k => ({ user_id: userId, key: k, value: stripDeviceLocal(k, blob[k]) }))
   if (stateRows.length > 0) {
     const { error } = await supabase.from('app_state').upsert(stateRows, { onConflict: 'user_id,key' })
     if (error) throw error
@@ -70,7 +73,7 @@ export async function migrateLocalToTables(userId) {
     const arr = storage.get(TABLE_STORAGE_KEY[table], null)
     if (Array.isArray(arr) && arr.length > 0) {
       const rows = arr.map(o => toRow(table, o, userId))
-      const { error } = await supabase.from(table).upsert(rows, { onConflict: 'id' })
+      const { error } = await supabase.from(table).upsert(rows, { onConflict: 'user_id,id' })
       if (error) throw error
       pushed = true
     }
@@ -78,7 +81,7 @@ export async function migrateLocalToTables(userId) {
   const stateRows = SINGLETON_KEYS
     .map(k => ({ k, v: storage.get(k, null) }))
     .filter(x => x.v !== null && x.v !== undefined)
-    .map(x => ({ user_id: userId, key: x.k, value: x.v }))
+    .map(x => ({ user_id: userId, key: x.k, value: stripDeviceLocal(x.k, x.v) }))
   if (stateRows.length > 0) {
     const { error } = await supabase.from('app_state').upsert(stateRows, { onConflict: 'user_id,key' })
     if (error) throw error
@@ -108,7 +111,7 @@ export async function syncTableChange(userId, storageKey, nextArray, prevArray) 
     }
   }
   if (toUpsert.length > 0) {
-    const { error } = await supabase.from(table).upsert(toUpsert, { onConflict: 'id' })
+    const { error } = await supabase.from(table).upsert(toUpsert, { onConflict: 'user_id,id' })
     if (error) throw error
   }
 
@@ -126,8 +129,19 @@ export async function syncTableChange(userId, storageKey, nextArray, prevArray) 
 // ── Singleton push ──
 export async function syncSingleton(userId, key, value) {
   const { error } = await supabase.from('app_state')
-    .upsert({ user_id: userId, key, value }, { onConflict: 'user_id,key' })
+    .upsert({ user_id: userId, key, value: stripDeviceLocal(key, value) }, { onConflict: 'user_id,key' })
   if (error) throw error
+}
+
+// One-time cleanup: overwrite any singleton rows that were written before the
+// device-local filter existed, so previously synced credentials stop sitting
+// in the database. Safe to run on every login.
+export async function purgeRemoteDeviceLocal(userId) {
+  for (const key of Object.keys(DEVICE_LOCAL_FIELDS)) {
+    const local = storage.get(key, null)
+    if (!local) continue
+    await syncSingleton(userId, key, local)
+  }
 }
 
 export { TABLES, SINGLETON_KEYS }

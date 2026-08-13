@@ -1,7 +1,8 @@
 import { useState, useCallback } from 'react'
 import { storage } from '../utils/storage'
+import { genId as makeId } from '../utils/ids'
 
-const genId = () => `inv_${Date.now()}`
+const genId = () => makeId('inv')
 
 export function useInvoices() {
   const [invoices, setInvoices] = useState(() => storage.get('invoices', []))

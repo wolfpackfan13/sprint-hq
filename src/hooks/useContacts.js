@@ -1,7 +1,8 @@
 import { useState, useCallback } from 'react'
 import { storage } from '../utils/storage'
+import { genId as makeId } from '../utils/ids'
 
-const genId = () => `con_${Date.now()}_${Math.random().toString(36).slice(2,6)}`
+const genId = () => makeId('con')
 
 export function useContacts() {
   const [contacts, setContacts] = useState(() => storage.get('contacts', []))

@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react'
 import { storage } from '../utils/storage'
+import { genId as makeId } from '../utils/ids'
 
 const DEFAULT_COMPANIES = [
   { id: 'refuge-homes',  name: 'Refuge Homes',    color: '#2D7A50', emoji: '🏠', billable: false, hourlyRate: 0 },
@@ -10,7 +11,7 @@ const DEFAULT_COMPANIES = [
   { id: 'admin',         name: 'Admin',            color: '#6B7280', emoji: '📋', billable: false, hourlyRate: 0 },
 ]
 
-const genId = () => `co_${Date.now()}_${Math.random().toString(36).slice(2,5)}`
+const genId = () => makeId('co')
 
 export function useCompanies() {
   const [companies, setCompanies] = useState(() => {

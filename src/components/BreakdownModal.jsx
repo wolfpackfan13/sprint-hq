@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { X, Sparkles, Check, Plus, RefreshCw } from 'lucide-react'
 import { breakdownTask } from '../utils/aiBreakdown'
+import { genId as makeId } from '../utils/ids'
 
 export function BreakdownModal({ task, apiKey, onApply, onClose }) {
   const [steps, setSteps] = useState([])
@@ -11,7 +12,7 @@ export function BreakdownModal({ task, apiKey, onApply, onClose }) {
     setLoading(true); setError(null)
     try {
       const result = await breakdownTask(task.title, task.notes, apiKey)
-      setSteps(result.map((s, i) => ({ id: `sub_${Date.now()}_${i}`, title: s, done: false, include: true })))
+      setSteps(result.map(s => ({ id: makeId('sub'), title: s, done: false, include: true })))
     } catch (err) {
       setError(err.message)
     } finally {

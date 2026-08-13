@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { Link2, Plus, X, ExternalLink, Trash2 } from 'lucide-react'
+import { genId as makeId } from '../utils/ids'
 
-const genId = () => `res_${Date.now()}_${Math.random().toString(36).slice(2,5)}`
+const genId = () => makeId('res')
 
 // Guess a friendly label from a URL
 function autoLabel(url) {

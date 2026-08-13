@@ -1,7 +1,8 @@
 import { useState, useCallback } from 'react'
 import { storage } from '../utils/storage'
+import { genId as makeId } from '../utils/ids'
 
-const genId = () => `proj_${Date.now()}_${Math.random().toString(36).slice(2,5)}`
+const genId = () => makeId('proj')
 
 export function useProjects() {
   const [projects, setProjects] = useState(() => storage.get('projects', []))

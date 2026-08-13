@@ -47,6 +47,7 @@ import { Login } from './components/Login'
 import { SyncIndicator } from './components/SyncIndicator'
 import { SearchOverlay } from './components/SearchOverlay'
 import { GlobalTimer } from './components/GlobalTimer'
+import { genId as makeId } from './utils/ids'
 
 function AppMain({ sync }) {
   const [activeView, setActiveView] = useState('do')
@@ -179,7 +180,7 @@ function AppMain({ sync }) {
         priority: 'medium',
         notes: `From meeting: ${data.title || ''}`,
       })
-      return { ...ai, taskId: newTask?.id || `linked_${Date.now()}` }
+      return { ...ai, taskId: newTask?.id || makeId('linked') }
     })
     const payload = { ...data, actionItems: updatedItems }
     if (payload.id) updateMeeting(payload.id, payload); else addMeeting(payload)
@@ -189,7 +190,7 @@ function AppMain({ sync }) {
   const handlePushActionToTask = useCallback((meetingId, actionItem) => {
     const meeting = meetings.find(m => m.id === meetingId)
     const newTask = saveTask({ title: actionItem.title, dueDate: actionItem.dueDate || null, companyId: meeting?.companyId || null, projectId: meeting?.projectId || null, priority: 'medium', notes: `From meeting: ${meeting?.title || ''}` })
-    if (meeting) updateMeeting(meetingId, { actionItems: (meeting.actionItems||[]).map(ai => ai.id === actionItem.id ? { ...ai, taskId: newTask?.id || `pushed_${Date.now()}` } : ai) })
+    if (meeting) updateMeeting(meetingId, { actionItems: (meeting.actionItems||[]).map(ai => ai.id === actionItem.id ? { ...ai, taskId: newTask?.id || makeId('pushed') } : ai) })
   }, [meetings, saveTask, updateMeeting])
 
   // ── Backup ──
