@@ -4,7 +4,7 @@ import { storage } from '../utils/storage'
 import { TABLE_STORAGE_KEY, SINGLETON_KEYS } from '../utils/dataMap'
 import {
   pullAllFromCloud, migrateBlobToTables,
-  syncTableChange, syncSingleton,
+  syncTableChange, syncSingleton, purgeRemoteDeviceLocal,
 } from '../utils/dataEngine'
 
 const LIST_KEYS = Object.values(TABLE_STORAGE_KEY)
@@ -51,6 +51,7 @@ export function useSync() {
         await migrateBlobToTables(session.user.id)
         await pullAllFromCloud(session.user.id)
       }
+      await purgeRemoteDeviceLocal(session.user.id)
       setLastSynced(new Date())
       setSyncStatus('synced')
     } catch (err) {

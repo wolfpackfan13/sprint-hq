@@ -1,7 +1,8 @@
 import { useState, useCallback } from 'react'
 import { storage } from '../utils/storage'
+import { genId as makeId } from '../utils/ids'
 
-const genId = () => `goal_${Date.now()}`
+const genId = () => makeId('goal')
 
 export function useGoals() {
   const [vision, setVision] = useState(() => storage.get('vision', ''))

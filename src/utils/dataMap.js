@@ -61,6 +61,35 @@ export const TABLE_STORAGE_KEY = {
 // Singleton state keys (stored in app_state table, key/value)
 export const SINGLETON_KEYS = ['sprint', 'vision', 'settings', 'invoiceProfile', 'eventNotes']
 
+// Fields that must never leave the device. These are live credentials:
+// an Anthropic API key (billable) and a Google OAuth access token carrying
+// gmail.readonly / calendar.readonly / drive.file scopes. They are stripped
+// before any write to Supabase and re-merged from localStorage on pull.
+export const DEVICE_LOCAL_FIELDS = {
+  settings: ['anthropicKey', 'googleToken', 'googleTokenExpiry', 'googleConnected'],
+}
+
+// Remove device-local fields before pushing to the cloud.
+export function stripDeviceLocal(key, value) {
+  const fields = DEVICE_LOCAL_FIELDS[key]
+  if (!fields || !value || typeof value !== 'object' || Array.isArray(value)) return value
+  const out = { ...value }
+  for (const f of fields) delete out[f]
+  return out
+}
+
+// Re-apply the device's own credentials over a value pulled from the cloud,
+// so syncing never blanks the local key or signs the device out of Google.
+export function mergeDeviceLocal(key, cloudValue, localValue) {
+  const fields = DEVICE_LOCAL_FIELDS[key]
+  if (!fields || !cloudValue || typeof cloudValue !== 'object' || Array.isArray(cloudValue)) return cloudValue
+  const out = { ...cloudValue }
+  for (const f of fields) {
+    if (localValue && localValue[f] !== undefined) out[f] = localValue[f]
+  }
+  return out
+}
+
 // Convert an app object -> DB row (camelCase -> snake_case)
 export function toRow(table, obj, userId) {
   const map = FIELD_MAPS[table]

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { X, Plus, Trash2, ArrowRight, Calendar, Users, Tag, AlignLeft } from 'lucide-react'
 import { dateUtils } from '../utils/dateUtils'
+import { genId as makeId } from '../utils/ids'
 
 export function MeetingModal({ meeting, companies, projects = [], onSave, onClose }) {
   const [title, setTitle] = useState(meeting?.title || '')
@@ -19,7 +20,7 @@ export function MeetingModal({ meeting, companies, projects = [], onSave, onClos
   const addActionItem = () => {
     if (!newActionItem.trim()) return
     setActionItems(prev => [...prev, {
-      id: `ai_${Date.now()}`,
+      id: makeId('ai'),
       title: newActionItem.trim(),
       dueDate: null,
       done: false,

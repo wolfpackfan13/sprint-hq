@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { Plus, Check, Trash2, GripVertical } from 'lucide-react'
+import { genId as makeId } from '../utils/ids'
 
-const genId = () => `sub_${Date.now()}_${Math.random().toString(36).slice(2,5)}`
+const genId = () => makeId('sub')
 
 export function SubtaskEditor({ subtasks = [], onChange }) {
   const [newTitle, setNewTitle] = useState('')

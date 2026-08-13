@@ -1,8 +1,9 @@
 import { useState, useCallback } from 'react'
 import { storage } from '../utils/storage'
 import { dateUtils } from '../utils/dateUtils'
+import { genId as makeId } from '../utils/ids'
 
-const genId = () => `task_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
+const genId = () => makeId('task')
 
 export function useTasks() {
   const [tasks, setTasks] = useState(() => storage.get('tasks', []))
@@ -89,7 +90,7 @@ export function useTasks() {
     if (!seconds || seconds < 1) return
     setTasks(prev => persist(prev.map(t => {
       if (t.id !== id) return t
-      const entry = { id: `te_${Date.now()}`, start: new Date(Date.now() - seconds*1000).toISOString(), end: new Date().toISOString(), seconds }
+      const entry = { id: makeId('te'), start: new Date(Date.now() - seconds*1000).toISOString(), end: new Date().toISOString(), seconds }
       return { ...t, timeEntries: [...(t.timeEntries||[]), entry] }
     })))
   }, [])
@@ -99,7 +100,7 @@ export function useTasks() {
     setTasks(prev => persist(prev.map(t => {
       if (t.id !== id) return t
       const when = dateStr ? new Date(dateStr + 'T12:00:00').toISOString() : new Date().toISOString()
-      const entry = { id: `te_${Date.now()}`, start: when, end: when, seconds, manual: true, note }
+      const entry = { id: makeId('te'), start: when, end: when, seconds, manual: true, note }
       return { ...t, timeEntries: [...(t.timeEntries||[]), entry] }
     })))
   }, [])
@@ -113,7 +114,7 @@ export function useTasks() {
     const { taskId, companyId = null, projectId = null, title } = target
     const { dateStr } = opts
     const when = dateStr ? new Date(dateStr + 'T12:00:00').toISOString() : new Date().toISOString()
-    const makeEntry = () => ({ id: `te_${Date.now()}_${Math.random().toString(36).slice(2,6)}`, start: when, end: when, seconds, manual: !!dateStr })
+    const makeEntry = () => ({ id: makeId('te'), start: when, end: when, seconds, manual: !!dateStr })
 
     setTasks(prev => {
       // 1. Explicit task id
