@@ -11,26 +11,26 @@ export function useTasks() {
   const persist = (updated) => { storage.set('tasks', updated); return updated }
 
   const addTask = useCallback((data) => {
-    let created
-    setTasks(prev => {
-      created = {
-        id: genId(),
-        title: data.title || '',
-        notes: data.notes || '',
-        companyId: data.companyId || null,
-        projectId: data.projectId || null,
-        dueDate: data.dueDate || null,
-        priority: data.priority || 'medium',
-        status: 'todo',
-        isTop3: data.isTop3 || false,
-        subtasks: data.subtasks || [],        // [{id, title, done}]
-        timeEntries: data.timeEntries || [],  // [{id, start, end, seconds, manual, note}]
-        resources: data.resources || [],      // [{id, label, url}]
-        createdAt: new Date().toISOString(),
-        completedAt: null,
-      }
-      return persist([...prev, created])
-    })
+    // Build the row before setTasks. React runs the updater during a later
+    // render, so anything assigned inside it is still undefined when this
+    // function returns — callers that need the new id got undefined.
+    const created = {
+      id: genId(),
+      title: data.title || '',
+      notes: data.notes || '',
+      companyId: data.companyId || null,
+      projectId: data.projectId || null,
+      dueDate: data.dueDate || null,
+      priority: data.priority || 'medium',
+      status: 'todo',
+      isTop3: data.isTop3 || false,
+      subtasks: data.subtasks || [],        // [{id, title, done}]
+      timeEntries: data.timeEntries || [],  // [{id, start, end, seconds, manual, note}]
+      resources: data.resources || [],      // [{id, label, url}]
+      createdAt: new Date().toISOString(),
+      completedAt: null,
+    }
+    setTasks(prev => persist([...prev, created]))
     return created
   }, [])
 
