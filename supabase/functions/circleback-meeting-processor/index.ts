@@ -48,16 +48,17 @@ const COMPANY_BY_EMAIL: Record<string, string> = {
   "dmillary@gmail.com":  "co_1782329982318_4ia",  // David Millary
   "bevans512@gmail.com": "co_1782329982318_4ia",  // Brian Evans
 }
-// Offered to Claude when no address matches. Keep in sync with the above.
-const COMPANY_CHOICES = [
-  { id: "co_1782329982318_4ia", name: "Apex Property Media", hint: "photo editing, CTA site, credits, photographers, David Millary, Brian Evans, inuaai" },
-  { id: "refuge-homes",  name: "Refuge Homes",    hint: "faith-based affordable housing fund, Dana, Blake, LPs, investors, DAFs" },
-  { id: "flip-projects", name: "Flip Projects",   hint: "fix-and-flip, 210 East Crestview Smithfield, Alejandro, contractors" },
-  { id: "content",       name: "Content & Brand", hint: "samblinson.com, coaching, personal brand" },
-  { id: "mayfly",        name: "Mayfly Project",  hint: "Mayfly" },
-  { id: "personal",      name: "Personal",        hint: "personal, family, non-business" },
-  { id: "admin",         name: "Admin",           hint: "bookkeeping, taxes, insurance, internal admin" },
-]
+// Extra context for Claude's pick, by company id. Optional: a company with no
+// hint here is still offered, using its name from the database.
+const COMPANY_HINTS: Record<string, string> = {
+  "co_1782329982318_4ia": "photo editing, CTA site, credits, photographers, David Millary, Brian Evans, inuaai",
+  "refuge-homes":  "faith-based affordable housing fund, Dana, Blake, LPs, investors, DAFs",
+  "flip-projects": "fix-and-flip, 210 East Crestview Smithfield, Alejandro, contractors",
+  "content":       "samblinson.com, coaching, personal brand",
+  "mayfly":        "Mayfly",
+  "personal":      "personal, family, non-business",
+  "admin":         "bookkeeping, taxes, insurance, internal admin",
+}
 
 const SYSTEM_PROMPT = `
 You are Sam Blinson's chief of staff. Sam just finished a call (captured by Circleback). Do FOUR jobs and return ONLY valid JSON — no markdown fences, no preamble.
@@ -240,6 +241,12 @@ serve(async (req: Request) => {
     const explicitCompany = payload.company_id ?? null
     const matchedCompany  = explicitCompany ?? companyFromAttendees(attendees)
 
+    // Real companies, so Claude picks from what exists rather than from a
+    // constant in this file that may have drifted.
+    const { data: companyRowsRaw } = await sb
+      .from("companies").select("id, name").eq("user_id", userId)
+    const companyRows = companyRowsRaw ?? []
+
     const aiLines = actionItems.map((i: any) => `- [${i.assignee?.name ?? i.assignee ?? "unassigned"}] ${i.title ?? ""}${i.description ? ": " + i.description : ""}`)
     const attLines = attendees.map((a: any) => `- ${a.name ?? "?"} (${a.email ?? "no email"})`)
 
@@ -252,7 +259,7 @@ serve(async (req: Request) => {
       "--- COMPANY OPTIONS (for JOB 4) ---",
       matchedCompany
         ? `Already resolved from attendee addresses: ${matchedCompany}. Return this id.`
-        : COMPANY_CHOICES.map((c) => `- id:"${c.id}" name:"${c.name}" — ${c.hint}`).join("\n"),
+        : companyRows.map((c) => `- id:"${c.id}" name:"${c.name}"${COMPANY_HINTS[c.id] ? ` — ${COMPANY_HINTS[c.id]}` : ""}`).join("\n") || "(none on file — return null)",
       "",
       "--- ATTENDEES ---",
       attLines.length ? attLines.join("\n") : "None listed",
@@ -290,9 +297,14 @@ serve(async (req: Request) => {
     }
 
     // Only accept a company id that is actually one of ours.
-    const claudeCompany = COMPANY_CHOICES.some((c) => c.id === analysis.company_id)
-      ? analysis.company_id! : null
-    const companyId = matchedCompany ?? claudeCompany
+    // Only accept an id that actually exists in this user's companies. The
+    // domain map above is hand-maintained and can go stale; writing an id that
+    // points at nothing is worse than writing null.
+    const validIds = new Set(companyRows.map((c: any) => c.id))
+    const claudeCompany = analysis.company_id && validIds.has(analysis.company_id)
+      ? analysis.company_id : null
+    const companyId = (matchedCompany && validIds.has(matchedCompany))
+      ? matchedCompany : claudeCompany
 
     const tasks = analysis.tasks ?? []
     let tasksCreated = 0
