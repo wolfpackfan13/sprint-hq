@@ -31,11 +31,18 @@ export const FIELD_MAPS = {
     attendees: 'attendees', companyId: 'company_id', projectId: 'project_id',
     goalId: 'goal_id', notes: 'notes', actionItems: 'action_items',
     createdAt: 'created_at',
+    // Relationships CRM (migration 004)
+    contactIds: 'contact_ids', externalId: 'external_id', summary: 'summary',
+    recordingUrl: 'recording_url', source: 'source',
   },
   contacts: {
     id: 'id', name: 'name', company: 'company', companyId: 'company_id',
     role: 'role', email: 'email', phone: 'phone', notes: 'notes',
     tags: 'tags', lastContactDate: 'last_contact_date', createdAt: 'created_at',
+    // Relationships CRM (migration 004)
+    stage: 'stage', nextTouchOn: 'next_touch_on', nextTouchReason: 'next_touch_reason',
+    networkLabel: 'network_label', source: 'source', referredBy: 'referred_by',
+    becameClientOn: 'became_client_on', sourceRef: 'source_ref',
   },
   notes: {
     id: 'id', content: 'content', pinned: 'pinned', createdAt: 'created_at',
@@ -90,6 +97,9 @@ export function mergeDeviceLocal(key, cloudValue, localValue) {
   return out
 }
 
+// Date columns: Postgres rejects '' here, so empty strings go up as null.
+const DATE_COLUMNS = ['due_date', 'date', 'last_contact_date', 'completed_at', 'next_touch_on', 'became_client_on']
+
 // Convert an app object -> DB row (camelCase -> snake_case)
 export function toRow(table, obj, userId) {
   const map = FIELD_MAPS[table]
@@ -98,7 +108,7 @@ export function toRow(table, obj, userId) {
     if (obj[appKey] !== undefined) {
       let v = obj[appKey]
       // Normalize empty-string dates to null (Postgres date columns reject '')
-      if ((dbCol === 'due_date' || dbCol === 'date' || dbCol === 'last_contact_date' || dbCol === 'completed_at') && v === '') v = null
+      if (DATE_COLUMNS.includes(dbCol) && v === '') v = null
       row[dbCol] = v
     }
   }
@@ -113,7 +123,7 @@ export function fromRow(table, row) {
     if (row[dbCol] !== undefined && row[dbCol] !== null) obj[appKey] = row[dbCol]
   }
   // Ensure JSONB array fields default to []
-  const arrayFields = ['subtasks', 'timeEntries', 'resources', 'actionItems', 'tags']
+  const arrayFields = ['subtasks', 'timeEntries', 'resources', 'actionItems', 'tags', 'contactIds']
   arrayFields.forEach(f => { if (FIELD_MAPS[table][f] && obj[f] == null) obj[f] = [] })
   return obj
 }

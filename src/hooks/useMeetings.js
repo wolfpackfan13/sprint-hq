@@ -14,23 +14,25 @@ export function useMeetings() {
   }
 
   const addMeeting = useCallback((data) => {
-    setMeetings(prev => {
-      const meeting = {
-        id: genId(),
-        title: '',
-        date: dateUtils.today(),
-        time: '',
-        attendees: '',
-        companyId: null,
-        projectId: null,
-        goalId: null,
-        notes: '',
-        actionItems: [],
-        createdAt: new Date().toISOString(),
-        ...data,
-      }
-      return persist([meeting, ...prev])
-    })
+    const meeting = {
+      id: genId(),
+      title: '',
+      date: dateUtils.today(),
+      time: '',
+      attendees: '',
+      companyId: null,
+      projectId: null,
+      goalId: null,
+      notes: '',
+      actionItems: [],
+      contactIds: [],
+      summary: '',
+      source: 'manual',
+      createdAt: new Date().toISOString(),
+      ...data,
+    }
+    setMeetings(prev => persist([meeting, ...prev]))
+    return meeting
   }, [])
 
   const updateMeeting = useCallback((id, data) => {

@@ -83,6 +83,11 @@ create table if not exists meetings (
   goal_id text,
   notes text default '',
   action_items jsonb default '[]'::jsonb,
+  contact_ids jsonb not null default '[]'::jsonb,
+  external_id text,
+  summary text default '',
+  recording_url text default '',
+  source text default 'manual',
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );
@@ -100,6 +105,16 @@ create table if not exists contacts (
   notes text default '',
   tags jsonb default '[]'::jsonb,
   last_contact_date date,
+  stage text not null default 'needs_review'
+    check (stage in ('nurturing','in_conversation','proposal_out','client','past_client','network','needs_review')),
+  next_touch_on date,
+  next_touch_reason text default '',
+  network_label text
+    check (network_label is null or network_label in ('referral_partner','collaborator','personal')),
+  source text,
+  referred_by text,
+  became_client_on date,
+  source_ref text,
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );

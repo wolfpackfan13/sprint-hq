@@ -3,14 +3,16 @@ import { X, Plus, Trash2, ArrowRight, Calendar, Users, Tag, AlignLeft } from 'lu
 import { dateUtils } from '../utils/dateUtils'
 import { genId as makeId } from '../utils/ids'
 
-export function MeetingModal({ meeting, companies, projects = [], onSave, onClose }) {
+export function MeetingModal({ meeting, companies, projects = [], onSave, onClose, demoMode = false }) {
   const [title, setTitle] = useState(meeting?.title || '')
   const [date, setDate] = useState(meeting?.date || dateUtils.today())
   const [time, setTime] = useState(meeting?.time || '')
   const [attendees, setAttendees] = useState(meeting?.attendees || '')
   const [companyId, setCompanyId] = useState(meeting?.companyId || null)
   const [projectId, setProjectId] = useState(meeting?.projectId || null)
-  const [notes, setNotes] = useState(meeting?.notes || '')
+  const [notes, setNotes] = useState(demoMode ? '' : (meeting?.notes || ''))
+  // Demo mode: saved notes stay hidden and unchanged unless something new is typed.
+  const [notesTouched, setNotesTouched] = useState(!demoMode || !meeting?.notes)
   const [actionItems, setActionItems] = useState(meeting?.actionItems || [])
   const [newActionItem, setNewActionItem] = useState('')
   const titleRef = useRef(null)
@@ -43,7 +45,7 @@ export function MeetingModal({ meeting, companies, projects = [], onSave, onClos
       attendees,
       companyId,
       projectId,
-      notes: notes.trim(),
+      notes: notesTouched ? notes.trim() : (meeting?.notes || ''),
       actionItems,
     })
   }
@@ -155,8 +157,8 @@ export function MeetingModal({ meeting, companies, projects = [], onSave, onClos
             <AlignLeft size={13} className="absolute left-3 top-3 text-navy-400 pointer-events-none" />
             <textarea
               value={notes}
-              onChange={e => setNotes(e.target.value)}
-              placeholder="Meeting notes..."
+              onChange={e => { setNotesTouched(true); setNotes(e.target.value) }}
+              placeholder={notesTouched ? 'Meeting notes...' : 'Hidden in demo mode. Typing here replaces the saved notes.'}
               rows={3}
               className="w-full input-base pl-9 pr-4 py-2.5 text-sm resize-none"
             />

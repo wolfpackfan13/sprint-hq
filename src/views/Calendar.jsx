@@ -1,6 +1,56 @@
 import { useState, useEffect, useCallback } from 'react'
 import { ChevronLeft, ChevronRight, RefreshCw, Calendar as CalIcon, MapPin, Users, ExternalLink, X, Plus, Clock, Link2 } from 'lucide-react'
 import { calUtils, dateUtils } from '../utils/dateUtils'
+import { contactForEmail, meetingsForContact, meetingBlurb, stageOf, DEMO_MASK } from '../utils/relationships'
+import { Avatar, StageChip } from '../components/relationships/bits'
+
+// "marcus.hill@x.com" -> "Marcus Hill": a starting name for a new contact.
+function nameFromEmail(email) {
+  return (email.split('@')[0] || '').split(/[._-]+/).filter(Boolean)
+    .map(w => w[0].toUpperCase() + w.slice(1)).join(' ')
+}
+
+// The "last time" line: who on this invite you already know, and what was
+// said at your most recent meeting with them.
+function PeopleOnInvite({ event, contacts, meetings, userEmail, demoMode, ignore = [], companies, onOpenContact, onAddContact }) {
+  const [added, setAdded] = useState([])
+  const self = (userEmail || '').toLowerCase()
+  const emails = (event.attendees || []).filter(e => e && e.toLowerCase() !== self)
+  if (!emails.length || !contacts) return null
+  const known = emails.map(e => contactForEmail(e, contacts)).filter(Boolean)
+    .filter(c => !(demoMode && c.networkLabel === 'personal'))
+  const unknown = emails.filter(e => !contactForEmail(e, contacts) && !added.includes(e.toLowerCase()) && !ignore.includes(e.toLowerCase()))
+
+  return (
+    <div className="space-y-2">
+      {known.slice(0, 2).map(c => {
+        const last = meetingsForContact(c, meetings)[0]
+        return (
+          <div key={c.id} className="rounded-xl border border-[#FBE3B4] bg-gold-50 p-3 space-y-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <button onClick={() => onOpenContact(c.id)} className="flex items-center gap-2.5 text-left min-w-0">
+                <Avatar contact={c} company={companies.find(co => co.id === c.companyId)} size={30} />
+                <span className="min-w-0">
+                  <span className="block text-sm font-semibold text-navy-900 truncate">{c.name || c.email}</span>
+                  <span className="block text-xs text-navy-600">{last ? `Last time · ${dateUtils.format(last.date, 'short')}` : 'No conversations logged yet'}</span>
+                </span>
+              </button>
+              <StageChip stage={stageOf(c)} />
+            </div>
+            {last && meetingBlurb(last) && <p className="text-sm text-navy-700 leading-relaxed">{demoMode ? DEMO_MASK : meetingBlurb(last)}</p>}
+          </div>
+        )
+      })}
+      {unknown.slice(0, 4).map(e => (
+        <div key={e} className="flex items-center justify-between gap-2 text-sm min-h-[36px]">
+          <span className="text-navy-700 truncate">{e}</span>
+          <button onClick={() => { onAddContact({ email: e, name: nameFromEmail(e), stage: 'needs_review', source: 'other' }); setAdded(a => [...a, e.toLowerCase()]) }}
+            className="text-[13px] font-semibold text-blue-700 flex-shrink-0">Add contact</button>
+        </div>
+      ))}
+    </div>
+  )
+}
 
 const HOURS = Array.from({ length: 18 }, (_, i) => i + 5) // 5 AM – 10 PM
 
@@ -21,7 +71,7 @@ function eventStyle(ev, hourHeight = 48) {
   return { top: `${top}px`, height: `${height}px` }
 }
 
-function EventDetail({ event, companies, projects, onClose, onCreateTask, meetingNote, onSaveNote }) {
+function EventDetail({ event, companies, projects, onClose, onCreateTask, meetingNote, onSaveNote, people }) {
   const [note, setNote] = useState(meetingNote || '')
   if (!event) return null
   return (
@@ -40,6 +90,7 @@ function EventDetail({ event, companies, projects, onClose, onCreateTask, meetin
           <button onClick={onClose} className="p-1.5 text-navy-400 hover:text-navy-700 flex-shrink-0"><X size={18} /></button>
         </div>
         <div className="px-5 pb-5 space-y-3">
+          {people && <PeopleOnInvite event={event} companies={companies} {...people} />}
           {event.location && <div className="flex items-center gap-2 text-sm text-navy-600"><MapPin size={13} className="text-navy-400" /> {event.location}</div>}
           {event.attendees?.length > 0 && (
             <div className="flex items-start gap-2 text-sm text-navy-600"><Users size={13} className="text-navy-400 mt-0.5" /> <span className="flex-1">{event.attendees.slice(0, 5).join(', ')}{event.attendees.length > 5 ? ` +${event.attendees.length - 5}` : ''}</span></div>
@@ -62,7 +113,7 @@ function EventDetail({ event, companies, projects, onClose, onCreateTask, meetin
   )
 }
 
-export function Calendar({ google, companies, projects, settings, onCreateTask, eventNotes, onSaveEventNote, onOpenSettings }) {
+export function Calendar({ google, companies, projects, settings, onCreateTask, eventNotes, onSaveEventNote, onOpenSettings, people }) {
   const [view, setView] = useState('day') // day | week | month
   const [anchor, setAnchor] = useState(dateUtils.today())
   const [events, setEvents] = useState([])
@@ -151,7 +202,8 @@ export function Calendar({ google, companies, projects, settings, onCreateTask, 
       {selectedEvent && (
         <EventDetail event={selectedEvent} companies={companies} projects={projects}
           meetingNote={eventNotes?.[selectedEvent.id] || ''} onSaveNote={onSaveEventNote}
-          onClose={() => setSelectedEvent(null)} onCreateTask={handleCreateTask} />
+          onClose={() => setSelectedEvent(null)} onCreateTask={handleCreateTask}
+          people={people ? { ...people, onOpenContact: (id) => { setSelectedEvent(null); people.onOpenContact(id) } } : null} />
       )}
     </div>
   )

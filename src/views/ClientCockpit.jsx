@@ -38,7 +38,7 @@ export function ClientCockpit({
   company, tasks, projects, meetings,
   companies, allProjects,
   onBack, onAddTask, onAddProject, onAddMeeting, onOpenProject,
-  taskCardProps,
+  taskCardProps, demoMode = false,
 }) {
   const [tab, setTab] = useState('next') // next | timeline | projects | meetings
 
@@ -167,7 +167,7 @@ export function ClientCockpit({
                 <p className="font-display font-semibold text-navy-700">No history yet</p>
                 <p className="text-navy-400 text-sm mt-1">Completed tasks and meetings will show here</p>
               </div>
-            ) : timeline.map((item, i) => <TimelineRow key={i} item={item} allProjects={allProjects} />)}
+            ) : timeline.map((item, i) => <TimelineRow key={i} item={item} allProjects={allProjects} demoMode={demoMode} />)}
           </div>
         )}
 
@@ -211,7 +211,7 @@ export function ClientCockpit({
                   <div className="flex-1 min-w-0">
                     <p className="font-display font-semibold text-navy-900 text-sm">{m.title}</p>
                     <p className="text-[11px] text-navy-400">{dateUtils.format(m.date, 'medium')}{(m.actionItems || []).length > 0 && ` · ${m.actionItems.length} action items`}</p>
-                    {m.notes && <p className="text-xs text-navy-500 mt-1 line-clamp-2">{m.notes}</p>}
+                    {m.notes && <p className="text-xs text-navy-500 mt-1 line-clamp-2">{demoMode ? 'Hidden in demo mode' : m.notes}</p>}
                   </div>
                 </div>
               </div>
@@ -232,7 +232,7 @@ function Section({ title, color, tasks, taskCardProps }) {
   )
 }
 
-function TimelineRow({ item, allProjects }) {
+function TimelineRow({ item, allProjects, demoMode }) {
   const proj = item.projectId ? allProjects.find(p => p.id === item.projectId) : null
   const config = {
     task_done: { icon: CheckCircle2, color: '#2D7A50', label: 'Completed' },
@@ -253,7 +253,7 @@ function TimelineRow({ item, allProjects }) {
         </div>
         <p className="text-sm text-navy-700 mt-0.5">{item.title}</p>
         {proj && <p className="text-[11px] text-navy-400">{proj.name}</p>}
-        {item.notes && <p className="text-xs text-navy-500 mt-1 line-clamp-2">{item.notes}</p>}
+        {item.notes && <p className="text-xs text-navy-500 mt-1 line-clamp-2">{demoMode && item.type === 'meeting' ? 'Hidden in demo mode' : item.notes}</p>}
         {item.actionCount > 0 && <p className="text-[11px] text-gold-600 mt-0.5">{item.actionCount} action items</p>}
       </div>
     </div>
