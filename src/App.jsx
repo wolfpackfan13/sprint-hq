@@ -49,6 +49,8 @@ import { SyncIndicator } from './components/SyncIndicator'
 import { SearchOverlay } from './components/SearchOverlay'
 import { GlobalTimer } from './components/GlobalTimer'
 import { genId as makeId } from './utils/ids'
+import { ReachOutCard } from './components/relationships/ReachOutCard'
+import { dueTouches, contactIdsFromAttendees, hiddenInDemo } from './utils/relationships'
 
 function AppMain({ sync }) {
   const [activeView, setActiveView] = useState('do')
@@ -63,6 +65,7 @@ function AppMain({ sync }) {
   const [cockpitClient, setCockpitClient] = useState(null)
   const [detailProject, setDetailProject] = useState(null)
   const [searchOpen, setSearchOpen] = useState(false)
+  const [focusContactId, setFocusContactId] = useState(null)
 
   const {
     tasks, todayTasks, allThisWeekTasks, missedTasks, top3Tasks, unscheduledTasks, completedToday,
@@ -74,7 +77,7 @@ function AppMain({ sync }) {
   const { sprint, saveSprint, updateWeekGoal, updateSprintGoal, resetSprint, currentWeek, progress } = useSprint()
   const { notes, addNote, deleteNote, togglePin } = useNotes()
   const { companies, addCompany, updateCompany, deleteCompany } = useCompanies()
-  const { contacts, addContact, updateContact, deleteContact, touchContact } = useContacts()
+  const { contacts, addContact, updateContact, updateContacts, deleteContact, completeTouch } = useContacts()
   const { meetings, addMeeting, updateMeeting, deleteMeeting, toggleActionItem, addActionItem } = useMeetings()
   const { goals, vision, activeGoals, addGoal, updateGoal, deleteGoal, saveVision } = useGoals()
   const { settings, saveSettings, saveGoogleToken, clearGoogleToken } = useSettings()
@@ -98,7 +101,8 @@ function AppMain({ sync }) {
   }, [completeTask, settings.celebrationsEnabled])
 
   const handleToastUndo = useCallback(() => {
-    if (toast?.taskId) uncompleteTask(toast.taskId)
+    if (toast?.undo) toast.undo()
+    else if (toast?.taskId) uncompleteTask(toast.taskId)
     setToast(null)
   }, [toast, uncompleteTask])
   const rescheduleTask = useCallback((taskId, date) => { saveTask({ id: taskId, dueDate: date }) }, [saveTask])
@@ -183,10 +187,15 @@ function AppMain({ sync }) {
       })
       return { ...ai, taskId: newTask?.id || makeId('linked') }
     })
-    const payload = { ...data, actionItems: updatedItems }
+    // Link the meeting to anyone whose email or full name is in the attendee text.
+    // Keep links made elsewhere (logged conversations, Circleback): the modal doesn't carry them.
+    const existing = data.id ? meetings.find(m => m.id === data.id) : null
+    const linked = contactIdsFromAttendees(data.attendees, contacts)
+    const contactIds = [...new Set([...(existing?.contactIds || []), ...(data.contactIds || []), ...linked])]
+    const payload = { ...data, actionItems: updatedItems, contactIds }
     if (payload.id) updateMeeting(payload.id, payload); else addMeeting(payload)
     setMeetingModal({ open: false, meeting: null })
-  }, [addMeeting, updateMeeting, saveTask])
+  }, [addMeeting, updateMeeting, saveTask, contacts, meetings])
 
   const handlePushActionToTask = useCallback((meetingId, actionItem) => {
     const meeting = meetings.find(m => m.id === meetingId)
@@ -206,6 +215,22 @@ function AppMain({ sync }) {
   }, [google])
 
   const filterByClient = useCallback((items, key = 'companyId') => activeClient ? items.filter(i => i[key] === activeClient) : items, [activeClient])
+
+  // ── Relationships ──
+  const demoMode = !!settings.demoMode
+  const openContact = useCallback((id) => { setFocusContactId(id); setActiveView('relationships') }, [])
+  const ignoreEmail = useCallback((email) => {
+    const list = settings.contactIgnore || []
+    const e = (email || '').trim().toLowerCase()
+    if (e && !list.includes(e)) saveSettings({ contactIgnore: [...list, e] })
+  }, [settings.contactIgnore, saveSettings])
+  const snoozeTouch = useCallback((id, patch) => updateContact(id, patch), [updateContact])
+  const dueContacts = dueTouches(filterByClient(contacts).filter(c => !hiddenInDemo(c, demoMode)))
+  const peopleForCalendar = {
+    contacts, meetings, demoMode, userEmail: sync.userEmail, ignore: settings.contactIgnore || [],
+    onOpenContact: openContact,
+    onAddContact: (data) => addContact(data),
+  }
 
   // ── Keyboard shortcut: N or C for quick capture ──
   useEffect(() => {
@@ -237,7 +262,10 @@ function AppMain({ sync }) {
       case 'do':
         return <DoView todayTasks={filterByClient(todayTasks)} top3Tasks={filterByClient(top3Tasks)} missedTasks={filterByClient(missedTasks)} unscheduledTasks={filterByClient(unscheduledTasks)}
           companies={companies} projects={projects} onAdd={openAddTask} onComplete={handleComplete} onUncomplete={uncompleteTask} onEdit={openEditTask} onDelete={deleteTask} onReschedule={rescheduleTask}
-          completedToday={completedToday} timer={timer} onToggleTimer={timer.toggle} onToggleSubtask={toggleSubtask} onBreakdown={openBreakdown} onToggleTop3={toggleTop3} />
+          completedToday={completedToday} timer={timer} onToggleTimer={timer.toggle} onToggleSubtask={toggleSubtask} onBreakdown={openBreakdown} onToggleTop3={toggleTop3}
+          reachOutSlot={<ReachOutCard due={dueContacts} companies={companies} demoMode={demoMode}
+            onCompleteTouch={completeTouch} onSnooze={snoozeTouch} onOpenContact={openContact}
+            onOpenAll={() => setActiveView('relationships')} />} />
       case 'week':
         return <WeekBoard allTasks={filterByClient(allThisWeekTasks)} companies={companies} projects={filterByClient(activeProjects)}
           onAdd={openAddTask} onComplete={handleComplete} onEdit={openEditTask} onReschedule={rescheduleTask}
@@ -264,9 +292,16 @@ function AppMain({ sync }) {
       case 'meetings':
         return <Meetings meetings={filterByClient(meetings)} companies={companies} projects={projects} activeClient={activeClient}
           onAddMeeting={() => setMeetingModal({ open: true, meeting: {} })} onEditMeeting={(m) => setMeetingModal({ open: true, meeting: m })} onDeleteMeeting={deleteMeeting}
-          onToggleActionItem={toggleActionItem} onPushToTask={handlePushActionToTask} onAddActionItem={addActionItem} />
+          onToggleActionItem={toggleActionItem} onPushToTask={handlePushActionToTask} onAddActionItem={addActionItem} demoMode={demoMode} />
       case 'relationships':
-        return <Relationships contacts={filterByClient(contacts)} companies={companies} activeClient={activeClient} onAdd={addContact} onUpdate={updateContact} onDelete={deleteContact} onTouch={touchContact} />
+        return <Relationships
+          contacts={filterByClient(contacts)} allContacts={contacts} companies={companies} meetings={meetings} tasks={tasks}
+          demoMode={demoMode} focusContactId={focusContactId} onFocusHandled={() => setFocusContactId(null)}
+          onAdd={addContact} onUpdate={updateContact} onUpdateMany={updateContacts} onDelete={deleteContact}
+          onCompleteTouch={completeTouch} onAddMeeting={addMeeting} onAddCompany={addCompany} onDeleteCompany={deleteCompany}
+          onCompleteTask={handleComplete} onEditTask={openEditTask}
+          onOpenClient={(c) => { setCockpitClient(c); setActiveView('clients') }}
+          onIgnoreEmail={ignoreEmail} showToast={setToast} />
       case 'goals':
         return <Goals goals={filterByClient(goals)} vision={vision} companies={companies} activeClient={activeClient} onAddGoal={addGoal} onUpdateGoal={updateGoal} onDeleteGoal={deleteGoal} onSaveVision={saveVision} />
       case 'hours':
@@ -293,11 +328,12 @@ function AppMain({ sync }) {
             onAddMeeting={(d) => setMeetingModal({ open: true, meeting: d || {} })}
             onOpenProject={(p) => { setCockpitClient(null); openProjectDetail(p) }}
             taskCardProps={taskCardProps}
+            demoMode={demoMode}
           />
         }
         return <Clients companies={companies} tasks={tasks} projects={projects} meetings={meetings} onOpenClient={(c) => setCockpitClient(c)} onAddCompany={addCompany} onUpdateCompany={updateCompany} onDeleteCompany={deleteCompany} />
       case 'calendar':
-        return <Calendar google={google} companies={companies} projects={activeProjects} settings={settings} onCreateTask={(t) => saveTask(t)} eventNotes={eventNotes} onSaveEventNote={saveEventNote} onOpenSettings={() => setActiveView('settings')} />
+        return <Calendar google={google} companies={companies} projects={activeProjects} settings={settings} onCreateTask={(t) => saveTask(t)} eventNotes={eventNotes} onSaveEventNote={saveEventNote} onOpenSettings={() => setActiveView('settings')} people={peopleForCalendar} />
       case 'prep':
         return <PrepDay companies={companies} projects={activeProjects} google={google} settings={settings} onCreateTasks={createTasksBatch} onOpenSettings={() => setActiveView('settings')} />
       case 'archive':
@@ -324,7 +360,7 @@ function AppMain({ sync }) {
       </div>
       <MobileNav activeView={effectiveView} setActiveView={setActiveView} missedCount={missedCount} />
       {taskModal.open && <TaskModal task={taskModal.task} companies={companies} projects={projects} onSave={handleSaveTask} onClose={closeTaskModal} onBreakdown={openBreakdown} timeHandlers={timeHandlers} />}
-      {meetingModal.open && <MeetingModal meeting={meetingModal.meeting} companies={companies} projects={projects} onSave={handleSaveMeeting} onClose={() => setMeetingModal({ open: false, meeting: null })} />}
+      {meetingModal.open && <MeetingModal meeting={meetingModal.meeting} companies={companies} projects={projects} demoMode={demoMode} onSave={handleSaveMeeting} onClose={() => setMeetingModal({ open: false, meeting: null })} />}
       {projectModal.open && <ProjectModal project={projectModal.project} companies={companies} goals={goals} defaultCompanyId={projectModal.project?.companyId} onSave={handleSaveProject} onClose={() => setProjectModal({ open: false, project: null })} />}
       {breakdownModal.open && <BreakdownModal task={breakdownModal.task} apiKey={settings.anthropicKey} onApply={applyBreakdown} onClose={() => setBreakdownModal({ open: false, task: null })} />}
       {searchOpen && <SearchOverlay tasks={tasks} projects={projects} meetings={meetings} companies={companies} notes={notes} onClose={() => setSearchOpen(false)} onGoto={handleSearchGoto} />}

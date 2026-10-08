@@ -108,6 +108,21 @@ export function Settings({ settings, saveSettings, google, onBackup, companies, 
           )}
         </div>
 
+        {/* Demo mode: safe to screen-share Relationships with a client */}
+        <div className="card p-5">
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input type="checkbox" checked={!!settings.demoMode} onChange={e => saveSettings({ demoMode: e.target.checked })}
+              className="mt-1 w-4 h-4 accent-[#A86800] flex-shrink-0" />
+            <span>
+              <span className="block font-display font-semibold text-navy-900">Demo mode</span>
+              <span className="block text-xs text-navy-600 mt-0.5 leading-relaxed">
+                Hides contacts labeled Personal and masks profile notes, meeting summaries, and next touch reasons.
+                Names, stages, and dates stay visible. Turns on and off instantly.
+              </span>
+            </span>
+          </label>
+        </div>
+
         {/* Anthropic API */}
         <div className="card p-5">
           <div className="flex items-center gap-3 mb-4">

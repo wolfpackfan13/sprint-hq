@@ -7,6 +7,7 @@ export function DoView({
   todayTasks, top3Tasks, missedTasks, unscheduledTasks = [], companies, projects,
   onAdd, onComplete, onUncomplete, onEdit, onDelete, onReschedule,
   completedToday, timer, onToggleTimer, onToggleSubtask, onBreakdown, onToggleTop3,
+  reachOutSlot = null,
 }) {
   const [quickTitle, setQuickTitle] = useState('')
   const [showMissed, setShowMissed] = useState(true)
@@ -113,6 +114,9 @@ export function DoView({
             </div>
           </div>
         )}
+
+        {/* Relationships: next touches due today or overdue */}
+        {reachOutSlot}
 
         {/* Unscheduled — no-date orphans (incl. auto-imports) */}
         {unscheduledTasks.length > 0 && (

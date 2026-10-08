@@ -5,7 +5,7 @@ import { dateUtils } from '../utils/dateUtils'
 export function Meetings({
   meetings, companies, projects = [], activeClient,
   onAddMeeting, onEditMeeting, onDeleteMeeting,
-  onToggleActionItem, onPushToTask, onAddActionItem,
+  onToggleActionItem, onPushToTask, onAddActionItem, demoMode = false,
 }) {
   const [expanded, setExpanded] = useState({})
   const [newAiText, setNewAiText] = useState({})
@@ -84,7 +84,7 @@ export function Meetings({
             {m.notes && (
               <div>
                 <p className="text-[10px] font-semibold text-navy-400 uppercase tracking-wide mb-1">Notes</p>
-                <p className="text-sm text-navy-600 leading-relaxed whitespace-pre-wrap">{m.notes}</p>
+                <p className="text-sm text-navy-600 leading-relaxed whitespace-pre-wrap">{demoMode ? 'Hidden in demo mode' : m.notes}</p>
               </div>
             )}
 
