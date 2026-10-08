@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="96" fill="#0E1320"/>
+  <!-- 12-segment arc ring representing 12 weeks -->
+  <g transform="translate(256,256)">
+    <!-- Outer ring segments - 12 total, each 30 degrees -->
+    <circle cx="0" cy="0" r="180" fill="none" stroke="#1A2338" stroke-width="60"/>
+    <!-- Segment fills (first 7 lit = week 7 of 12 example) -->
+    <circle cx="0" cy="0" r="180" fill="none" stroke="#F4A825" stroke-width="60"
+      stroke-dasharray="66.0 725.5"
+      stroke-dashoffset="180"
+      transform="rotate(-90)"/>
+    <!-- Inner circle -->
+    <circle cx="0" cy="0" r="100" fill="#141B2D"/>
+    <!-- S mark -->
+    <text x="0" y="14" text-anchor="middle" font-family="'Space Grotesk', sans-serif"
+      font-weight="700" font-size="72" fill="#F4A825">S</text>
+  </g>
+</svg>
