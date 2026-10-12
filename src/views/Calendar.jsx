@@ -113,13 +113,49 @@ function EventDetail({ event, companies, projects, onClose, onCreateTask, meetin
   )
 }
 
+// Shown above the calendar when Google needs a refresh or said no.
+// The Refresh button opens Google's window inside the tap, which is what
+// keeps browsers from blocking it.
+export function GoogleStatus({ google, onRetry }) {
+  if (google.needsRenewal || google.calendarScopeMissing) {
+    const reconnect = google.calendarScopeMissing
+    return (
+      <div className="card p-3 mb-3 flex items-center justify-between gap-3 border border-[#FBE3B4] bg-gold-50">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-navy-900">{reconnect ? 'Calendar access is off' : 'Google needs a quick refresh'}</p>
+          <p className="text-xs text-navy-600">
+            {google.authError || (reconnect
+              ? 'Reconnect and tick the box for Google Calendar.'
+              : 'Google sign-ins last an hour. One tap renews it, no consent screen.')}
+          </p>
+        </div>
+        <button onClick={google.renew} disabled={google.signingIn}
+          className="btn-primary px-3 py-2 text-sm flex-shrink-0 min-h-[40px]">
+          {google.signingIn ? 'Opening…' : reconnect ? 'Reconnect' : 'Refresh Google'}
+        </button>
+      </div>
+    )
+  }
+  const message = google.calendarError || google.authError
+  if (!message) return null
+  return (
+    <div className="card p-3 mb-3 flex items-center justify-between gap-3 border border-red-200 bg-red-50">
+      <p className="text-sm text-red-700 min-w-0">{message}</p>
+      {onRetry && google.calendarError && (
+        <button onClick={onRetry} className="btn-ghost px-3 py-2 text-sm flex-shrink-0 min-h-[40px]">Try again</button>
+      )}
+    </div>
+  )
+}
+
 export function Calendar({ google, companies, projects, settings, onCreateTask, eventNotes, onSaveEventNote, onOpenSettings, people }) {
   const [view, setView] = useState('day') // day | week | month
-  const [anchor, setAnchor] = useState(dateUtils.today())
+  const [anchor, setAnchor] = useState(calUtils.localToday())
   const [events, setEvents] = useState([])
   const [loading, setLoading] = useState(false)
   const [selectedEvent, setSelectedEvent] = useState(null)
   const isConnected = google.isConnected()
+  const hasFreshToken = google.hasFreshToken
 
   const loadRange = useCallback(async () => {
     if (!isConnected) return
@@ -129,11 +165,14 @@ export function Calendar({ google, companies, projects, settings, onCreateTask, 
     else if (view === 'week') { const wd = calUtils.weekDays(anchor); start = wd[0]; end = wd[6] }
     else { const grid = calUtils.monthGrid(anchor); start = grid[0].date; end = grid[41].date }
     const evs = await google.fetchCalendarRange(start, end)
-    setEvents(evs || [])
+    // null means the load failed: keep what is on screen, the banner says why
+    if (evs) setEvents(evs)
     setLoading(false)
   }, [view, anchor, isConnected, google])
 
-  useEffect(() => { loadRange() }, [view, anchor, isConnected])
+  // Reloads when the range changes and again the moment a refreshed token
+  // arrives, so events appear right after you tap Refresh Google.
+  useEffect(() => { loadRange() }, [view, anchor, isConnected, hasFreshToken])
 
   const navigate = (dir) => {
     if (view === 'day') setAnchor(calUtils.addDays(anchor, dir))
@@ -184,7 +223,7 @@ export function Calendar({ google, companies, projects, settings, onCreateTask, 
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <button onClick={() => navigate(-1)} className="p-1.5 text-navy-500 hover:text-navy-800 rounded-lg hover:bg-surface-100"><ChevronLeft size={18} /></button>
-            <button onClick={() => setAnchor(dateUtils.today())} className="text-xs btn-ghost px-3 py-1.5">Today</button>
+            <button onClick={() => setAnchor(calUtils.localToday())} className="text-xs btn-ghost px-3 py-1.5">Today</button>
             <button onClick={() => navigate(1)} className="p-1.5 text-navy-500 hover:text-navy-800 rounded-lg hover:bg-surface-100"><ChevronRight size={18} /></button>
             <span className="font-display font-semibold text-navy-800 text-sm ml-1">{headerLabel}</span>
           </div>
@@ -194,6 +233,7 @@ export function Calendar({ google, companies, projects, settings, onCreateTask, 
 
       {/* Body */}
       <div className="flex-1 overflow-y-auto px-4 pb-4 max-w-5xl mx-auto w-full">
+        <GoogleStatus google={google} onRetry={loadRange} />
         {view === 'day' && <DayView dateStr={anchor} events={eventsForDay(anchor)} onSelect={setSelectedEvent} />}
         {view === 'week' && <WeekView anchor={anchor} events={events} onSelect={setSelectedEvent} />}
         {view === 'month' && <MonthView anchor={anchor} events={events} onSelectDay={(d) => { setAnchor(d); setView('day') }} />}
@@ -247,7 +287,7 @@ function DayView({ dateStr, events, onSelect }) {
 
 function WeekView({ anchor, events, onSelect }) {
   const days = calUtils.weekDays(anchor)
-  const today = dateUtils.today()
+  const today = calUtils.localToday()
   return (
     <div className="overflow-x-auto">
       <div className="min-w-[640px]">
@@ -284,7 +324,7 @@ function WeekView({ anchor, events, onSelect }) {
 
 function MonthView({ anchor, events, onSelectDay }) {
   const grid = calUtils.monthGrid(anchor)
-  const today = dateUtils.today()
+  const today = calUtils.localToday()
   const dows = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
   const countFor = (d) => events.filter(ev => (ev.start || '').split('T')[0] === d).length
   return (

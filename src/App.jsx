@@ -80,8 +80,8 @@ function AppMain({ sync }) {
   const { contacts, addContact, updateContact, updateContacts, deleteContact, completeTouch } = useContacts()
   const { meetings, addMeeting, updateMeeting, deleteMeeting, toggleActionItem, addActionItem } = useMeetings()
   const { goals, vision, activeGoals, addGoal, updateGoal, deleteGoal, saveVision } = useGoals()
-  const { settings, saveSettings, saveGoogleToken, clearGoogleToken } = useSettings()
-  const google = useGoogle(settings, saveGoogleToken, clearGoogleToken)
+  const { settings, saveSettings, saveGoogleToken, expireGoogleToken, clearGoogleToken } = useSettings()
+  const google = useGoogle(settings, { saveSettings, saveGoogleToken, expireGoogleToken, clearGoogleToken })
   const { projects, activeProjects, addProject, updateProject, deleteProject } = useProjects()
   const { invoices, profile: invoiceProfile, saveProfile, saveInvoice } = useInvoices()
   const timer = useTimer((session) => {

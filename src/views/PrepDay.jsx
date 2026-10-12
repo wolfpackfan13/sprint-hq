@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { CalendarClock, Sparkles, RefreshCw, Check, Plus, AlertCircle, Link2 } from 'lucide-react'
 import { matchCalendarToTasks } from '../utils/calendarMatch'
 import { dateUtils } from '../utils/dateUtils'
+import { GoogleStatus } from './Calendar'
 
 export function PrepDay({ companies, projects, google, settings, onCreateTasks, onOpenSettings }) {
   const [proposals, setProposals] = useState([])
@@ -17,7 +18,9 @@ export function PrepDay({ companies, projects, google, settings, onCreateTasks, 
     setLoading(true); setError(null); setCreated(false)
     try {
       const events = await google.fetchCalendarEvents(2) // today + tomorrow
-      if (!events || events.length === 0) {
+      // null: Google needs a refresh or returned an error; the banner says which
+      if (events === null) { setLoading(false); return }
+      if (events.length === 0) {
         setProposals([]); setRan(true); setLoading(false); return
       }
       const matched = await matchCalendarToTasks({ events, companies, projects, apiKey: settings.anthropicKey })
@@ -74,6 +77,7 @@ export function PrepDay({ companies, projects, google, settings, onCreateTasks, 
 
       <div className="flex-1 overflow-y-auto px-4 pb-4 max-w-2xl mx-auto w-full">
         {/* Gates */}
+        {isConnected && <GoogleStatus google={google} />}
         {!isConnected && (
           <div className="card p-5 border-blue-200 bg-blue-50 mb-3">
             <div className="flex items-start gap-3">

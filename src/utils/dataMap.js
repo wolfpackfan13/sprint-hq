@@ -73,7 +73,7 @@ export const SINGLETON_KEYS = ['sprint', 'vision', 'settings', 'invoiceProfile',
 // gmail.readonly / calendar.readonly / drive.file scopes. They are stripped
 // before any write to Supabase and re-merged from localStorage on pull.
 export const DEVICE_LOCAL_FIELDS = {
-  settings: ['anthropicKey', 'googleToken', 'googleTokenExpiry', 'googleConnected'],
+  settings: ['anthropicKey', 'googleToken', 'googleTokenExpiry', 'googleConnected', 'googleEmail'],
 }
 
 // Remove device-local fields before pushing to the cloud.

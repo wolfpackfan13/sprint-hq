@@ -7,6 +7,7 @@ const DEFAULTS = {
   googleConnected: false,
   googleToken: null,
   googleTokenExpiry: null,
+  googleEmail: '',
   visionStatement: '',
   celebrationsEnabled: true,
   focusTimerMinutes: 25,
@@ -36,8 +37,15 @@ export function useSettings() {
     saveSettings({ googleToken: token, googleTokenExpiry: expiry, googleConnected: true })
   }, [saveSettings])
 
+  // The hour is up: drop the token but stay linked, so screens offer a
+  // one-tap refresh instead of a full reconnect.
+  const expireGoogleToken = useCallback(() => {
+    saveSettings({ googleToken: null, googleTokenExpiry: null })
+  }, [saveSettings])
+
+  // Disconnect: forget everything about the Google link on this device.
   const clearGoogleToken = useCallback(() => {
-    saveSettings({ googleToken: null, googleTokenExpiry: null, googleConnected: false })
+    saveSettings({ googleToken: null, googleTokenExpiry: null, googleConnected: false, googleEmail: '' })
   }, [saveSettings])
 
   const isGoogleTokenValid = () => {
@@ -50,6 +58,7 @@ export function useSettings() {
     updateSetting,
     saveSettings,
     saveGoogleToken,
+    expireGoogleToken,
     clearGoogleToken,
     isGoogleTokenValid,
   }
