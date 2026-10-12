@@ -297,8 +297,9 @@ function AppMain({ sync }) {
         return <Relationships
           contacts={filterByClient(contacts)} allContacts={contacts} companies={companies} meetings={meetings} tasks={tasks}
           demoMode={demoMode} focusContactId={focusContactId} onFocusHandled={() => setFocusContactId(null)}
+          userEmail={sync.userEmail} ignore={settings.contactIgnore || []}
           onAdd={addContact} onUpdate={updateContact} onUpdateMany={updateContacts} onDelete={deleteContact}
-          onCompleteTouch={completeTouch} onAddMeeting={addMeeting} onAddCompany={addCompany} onDeleteCompany={deleteCompany}
+          onCompleteTouch={completeTouch} onAddMeeting={addMeeting} onUpdateMeeting={updateMeeting} onAddCompany={addCompany} onDeleteCompany={deleteCompany}
           onCompleteTask={handleComplete} onEditTask={openEditTask}
           onOpenClient={(c) => { setCockpitClient(c); setActiveView('clients') }}
           onIgnoreEmail={ignoreEmail} showToast={setToast} />
