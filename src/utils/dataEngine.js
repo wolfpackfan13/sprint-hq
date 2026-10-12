@@ -112,7 +112,19 @@ export async function syncTableChange(userId, storageKey, nextArray, prevArray) 
   }
   if (toUpsert.length > 0) {
     const { error } = await supabase.from(table).upsert(toUpsert, { onConflict: 'user_id,id' })
-    if (error) throw error
+    if (error) {
+      // 23505: a row repeats an email or Circleback meeting that is already
+      // saved under another id, usually one the Circleback processor added
+      // since this device last loaded. Save the other rows one at a time and
+      // leave that one on this device; the next full load brings in the
+      // saved copy. Re-queueing it would stall every change after it.
+      if (error.code !== '23505') throw error
+      for (const row of toUpsert) {
+        const { error: rowErr } = await supabase.from(table).upsert(row, { onConflict: 'user_id,id' })
+        if (rowErr && rowErr.code !== '23505') throw rowErr
+        if (rowErr) console.warn(`Sync skipped a ${table} row that duplicates one already saved (${row.id}): ${rowErr.message}`)
+      }
+    }
   }
 
   // Delete removed

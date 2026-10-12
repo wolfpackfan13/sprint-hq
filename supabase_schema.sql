@@ -115,6 +115,8 @@ create table if not exists contacts (
   referred_by text,
   became_client_on date,
   source_ref text,
+  suggested_stage text
+    check (suggested_stage is null or suggested_stage in ('nurturing','in_conversation','proposal_out','client','past_client','network')),
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );

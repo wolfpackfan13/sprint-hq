@@ -4,7 +4,7 @@ import { Sheet, Avatar } from './bits'
 import { defaultNextTouch, shortDay } from '../../utils/relationships'
 import { dateUtils } from '../../utils/dateUtils'
 import {
-  fetchCirclebackMeeting, draftFromCircleback, matchAttendees, looksLikeCirclebackLink,
+  fetchCirclebackMeeting, fetchSavedCopies, draftFromCircleback, matchAttendees, looksLikeCirclebackLink,
   looksLikeMarkdown, circlebackNotesToText, circlebackSummary, firstName,
 } from '../../utils/circleback'
 
@@ -18,7 +18,7 @@ const label = 'block text-xs font-semibold text-navy-600 mb-1.5'
 // title, date, summary and action items, and the full notes come along.
 export function LogConversationModal({
   contact, contacts = [], allContacts = [], meetings = [], userEmail, ignore = [],
-  onSave, onClose,
+  onAdoptSaved, onSave, onClose,
 }) {
   const today = dateUtils.today()
   const selfEmails = useMemo(() => [userEmail, 'sam.blinson@gmail.com'].filter(Boolean), [userEmail])
@@ -57,18 +57,27 @@ export function LogConversationModal({
     if (!text || loading) return
     setLoading(true); setLoadError('')
     const res = await fetchCirclebackMeeting(text)
-    setLoading(false)
-    if (res.error) { setLoadError(res.error); return }
+    if (res.error) { setLoading(false); setLoadError(res.error); return }
 
     const cb = res.meeting
+    // The Circleback processor may already have saved this meeting and
+    // added these people. Use those rows rather than making second copies.
+    const saved = await fetchSavedCopies(cb.id, (cb.attendees || []).map(a => a.email))
+    const adopted = onAdoptSaved ? onAdoptSaved(saved) : { meeting: null, contacts: [] }
+    setLoading(false)
+
     const d = draftFromCircleback(cb, { selfEmails })
     setDraft(d)
     setTitle(d.title)
     setDate(d.date && d.date <= today ? d.date : today)
     setNotes(d.summary || d.notes)
 
-    const { matchedIds, newPeople: unknown } = matchAttendees(cb.attendees, allContacts.length ? allContacts : contacts, { selfEmails, ignore })
-    setSelected(prev => [...new Set([...prev, ...matchedIds.filter(id => byId.has(id))])])
+    const pool = allContacts.length ? allContacts : contacts
+    const poolIds = new Set(pool.map(c => c.id))
+    const known = [...pool, ...adopted.contacts.filter(c => !poolIds.has(c.id))]
+    const pickable = new Set([...byId.keys(), ...adopted.contacts.map(c => c.id)])
+    const { matchedIds, newPeople: unknown } = matchAttendees(cb.attendees, known, { selfEmails, ignore })
+    setSelected(prev => [...new Set([...prev, ...matchedIds.filter(id => pickable.has(id))])])
     // A one-on-one with someone new: tick them, since that is why you are here.
     const solo = !contact && matchedIds.length === 0 && unknown.length === 1
     setNewPeople(unknown.map(p => ({ ...p, add: solo })))

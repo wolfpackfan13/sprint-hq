@@ -6,6 +6,7 @@ import {
   stageOf, segmentOf, touchStatus, touchLabel, meetingBlurb, lastContactDate,
 } from '../../utils/relationships'
 import { isCirclebackUrl } from '../../utils/circleback'
+import { safeUrl } from '../../utils/safeUrl'
 import { dateUtils } from '../../utils/dateUtils'
 
 const card = 'bg-white border border-surface-300 rounded-xl p-4 md:p-5'
@@ -23,10 +24,11 @@ function MeetingSourceTag({ meeting }) {
 // Circleback imports link to the meeting page (notes, transcript, recording);
 // anything else is a recording.
 function MeetingLink({ url }) {
-  if (!url) return null
+  const href = safeUrl(url)
+  if (!url || href === '#') return null
   const circleback = isCirclebackUrl(url)
   return (
-    <a href={url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[13px] font-medium text-blue-700 flex-shrink-0">
+    <a href={href} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[13px] font-medium text-blue-700 flex-shrink-0">
       {circleback ? <><ExternalLink size={13} /> Circleback</> : <><PlayCircle size={14} /> Recording</>}
     </a>
   )
