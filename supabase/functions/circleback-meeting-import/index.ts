@@ -24,7 +24,7 @@ const SUPABASE_SRK       = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
 const SAM_USER_ID        = Deno.env.get("SAM_USER_ID") ?? ""
 const CIRCLEBACK_API_KEY = Deno.env.get("CIRCLEBACK_API_KEY") ?? ""
 
-const CIRCLEBACK_MCP_URL = "https://circleback.ai/api/mcp"
+const CIRCLEBACK_API_URL = "https://circleback.ai/api"
 const CIRCLEBACK_TIMEOUT_MS = 20_000
 const MEETING_ID = /^[A-Za-z0-9_-]{6,64}$/
 
@@ -59,31 +59,23 @@ class HttpError extends Error {
   constructor(public status: number, public code: string, message: string) { super(message) }
 }
 
-// Circleback's API speaks JSON-RPC (the same endpoint its CLI uses). The
-// reply is either plain JSON or a short event stream; both carry the tool's
-// result as a JSON string in content[0].text.
+// Circleback's REST API: GET /api/meeting/{id} returns one meeting with its
+// notes, attendees and action items, authorized by an API key from
+// Settings → API keys. (This used to go through the MCP endpoint at
+// /api/mcp, which is meant for apps that sign in with OAuth; it started
+// answering API-key requests with 426 Upgrade Required.)
 async function readMeeting(meetingId: string) {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), CIRCLEBACK_TIMEOUT_MS)
   let res: Response
   try {
-    res = await fetch(CIRCLEBACK_MCP_URL, {
-      method: "POST",
+    res = await fetch(`${CIRCLEBACK_API_URL}/meeting/${encodeURIComponent(meetingId)}`, {
+      method: "GET",
       signal: controller.signal,
       headers: {
-        "Content-Type": "application/json",
-        "Accept": "application/json, text/event-stream",
+        "Accept": "application/json",
         "Authorization": `Bearer ${CIRCLEBACK_API_KEY}`,
       },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: 1,
-        method: "tools/call",
-        params: {
-          name: "ReadMeetings",
-          arguments: { intent: "Load meeting notes into Sprint HQ's CRM", meetingIds: [meetingId] },
-        },
-      }),
     })
   } catch (err) {
     throw new HttpError(504, "circleback_unreachable", `Could not reach Circleback: ${String(err)}`)
@@ -91,38 +83,19 @@ async function readMeeting(meetingId: string) {
     clearTimeout(timer)
   }
 
+  const body: any = await res.json().catch(() => null)
+  const message = typeof body?.error === "string" ? body.error : ""
+
   if (res.status === 401) throw new HttpError(502, "bad_key", "Circleback rejected the API key. Create a new one and update CIRCLEBACK_API_KEY.")
   if (res.status === 403) throw new HttpError(502, "bad_key", "This Circleback API key cannot read meetings.")
+  if (res.status === 404) throw new HttpError(404, "not_found", "No meeting with that link in your Circleback account.")
   if (res.status === 429) throw new HttpError(429, "rate_limited", "Circleback is rate limiting requests. Try again in a minute.")
-  if (!res.ok) throw new HttpError(502, "circleback_error", `Circleback returned ${res.status}.`)
-
-  const contentType = res.headers.get("content-type") ?? ""
-  const raw = await res.text()
-  const messages = contentType.includes("text/event-stream")
-    ? raw.split("\n").filter((l) => l.startsWith("data: ")).map((l) => { try { return JSON.parse(l.slice(6)) } catch { return null } }).filter(Boolean)
-    : [JSON.parse(raw)]
-
-  let text = ""
-  for (const msg of messages) {
-    if (msg.error) throw new HttpError(502, "circleback_error", msg.error.message ?? "Circleback returned an error.")
-    const result = msg.result
-    if (!result) continue
-    const part = (result.content ?? []).find((c: any) => c.type === "text")?.text ?? ""
-    if (result.isError) {
-      if (/not found|no meeting|access/i.test(part)) throw new HttpError(404, "not_found", "No meeting with that link in your Circleback account.")
-      throw new HttpError(502, "circleback_error", part || "Circleback returned an error.")
-    }
-    text += part
+  if (!res.ok) {
+    if (/not found|no meeting|access/i.test(message)) throw new HttpError(404, "not_found", "No meeting with that link in your Circleback account.")
+    throw new HttpError(502, "circleback_error", message || `Circleback returned ${res.status}.`)
   }
 
-  let meetings: any[]
-  try {
-    const parsed = JSON.parse(text)
-    meetings = Array.isArray(parsed) ? parsed : (parsed?.meetings ?? [parsed])
-  } catch {
-    throw new HttpError(502, "circleback_error", "Circleback's reply could not be read.")
-  }
-  const m = meetings.find((x) => x?.id === meetingId) ?? meetings[0]
+  const m = body?.meeting ?? body
   if (!m || !m.id) throw new HttpError(404, "not_found", "No meeting with that link in your Circleback account.")
   return m
 }
@@ -143,7 +116,8 @@ function normalize(m: any) {
       assignee: ai?.assignee ? { name: ai.assignee.name ?? null, email: ai.assignee.email ?? null } : null,
       done: String(ai?.status ?? "").toUpperCase() === "DONE",
     })).filter((ai: any) => ai.title),
-    tags: m.tags ?? [],
+    // The REST API returns tags as { id, name, description }.
+    tags: (m.tags ?? []).map((t: any) => (typeof t === "string" ? t : t?.name)).filter(Boolean),
     url: `https://circleback.ai/meetings/${m.id}`,
   }
 }
