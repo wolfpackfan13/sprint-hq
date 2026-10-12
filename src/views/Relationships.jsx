@@ -203,6 +203,25 @@ export function Relationships({
     setTouch(null)
   }
 
+  // The Circleback processor writes meetings and contacts straight to the
+  // database, so a pasted link can name rows this device hasn't loaded yet.
+  // Take those copies in under their own ids; creating fresh ones would hit
+  // the one-row-per-meeting and one-contact-per-email rules and stall sync.
+  const adoptSaved = ({ meeting, contacts: saved = [] }) => {
+    const known = new Map((allContacts || contacts).map(c => [c.id, c]))
+    const byEmail = new Map((allContacts || contacts).filter(c => c.email).map(c => [c.email.trim().toLowerCase(), c]))
+    const used = saved.map(c => {
+      const local = known.get(c.id) || byEmail.get((c.email || '').trim().toLowerCase())
+      return local || onAdd({ lastContactDate: '', nextTouchOn: '', ...c })
+    }).filter(Boolean)
+    let usedMeeting = null
+    if (meeting) {
+      usedMeeting = meetings.find(m => m.id === meeting.id || (m.externalId && m.externalId === meeting.externalId)) || null
+      if (!usedMeeting) usedMeeting = onAddMeeting(meeting)
+    }
+    return { meeting: usedMeeting, contacts: used }
+  }
+
   // One meeting, linked to everyone picked. Attendees from a Circleback link
   // who aren't contacts yet can be added to Needs review on the way in.
   const handleLog = ({ existingMeetingId, meeting, contactIds, newPeople, nextTouch }) => {
@@ -461,7 +480,7 @@ export function Relationships({
       {log && (log.contactId === null || logContact) && (
         <LogConversationModal contact={logContact} contacts={people} allContacts={allContacts || contacts}
           meetings={meetings} userEmail={userEmail} ignore={ignore}
-          onSave={handleLog} onClose={() => setLog(null)} />
+          onAdoptSaved={adoptSaved} onSave={handleLog} onClose={() => setLog(null)} />
       )}
     </div>
   )

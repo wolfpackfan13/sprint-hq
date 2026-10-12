@@ -43,6 +43,8 @@ export const FIELD_MAPS = {
     stage: 'stage', nextTouchOn: 'next_touch_on', nextTouchReason: 'next_touch_reason',
     networkLabel: 'network_label', source: 'source', referredBy: 'referred_by',
     becameClientOn: 'became_client_on', sourceRef: 'source_ref',
+    // Set by the Circleback processor for people it adds (migration 005)
+    suggestedStage: 'suggested_stage',
   },
   notes: {
     id: 'id', content: 'content', pinned: 'pinned', createdAt: 'created_at',

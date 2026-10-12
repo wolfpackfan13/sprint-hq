@@ -8,6 +8,7 @@
 
 import { supabase } from './supabase'
 import { genId } from './ids'
+import { fromRow } from './dataMap'
 
 export const CIRCLEBACK_FUNCTION = 'circleback-meeting-import'
 
@@ -53,6 +54,31 @@ export async function fetchCirclebackMeeting(link) {
     return { meeting: data.meeting }
   } catch {
     return { code: 'offline', error: MESSAGES.offline }
+  }
+}
+
+// The circleback-meeting-processor writes the meeting and any new attendees
+// straight to the database after each call. Returns the database's copies of
+// this meeting and of contacts with these emails, in the app's shape, so the
+// log sheet reuses them. Returns empty lists offline. Never throws.
+export async function fetchSavedCopies(externalId, emails = []) {
+  const empty = { meeting: null, contacts: [] }
+  if (!externalId) return empty
+  try {
+    const want = new Set(emails.map(e => String(e || '').trim().toLowerCase()).filter(Boolean))
+    const [m, c] = await Promise.all([
+      supabase.from('meetings').select('*').eq('external_id', externalId).limit(1),
+      want.size ? supabase.from('contacts').select('*') : Promise.resolve({ data: [] }),
+    ])
+    if (m.error || c.error) return empty
+    return {
+      meeting: m.data?.[0] ? fromRow('meetings', m.data[0]) : null,
+      contacts: (c.data || [])
+        .filter(r => want.has(String(r.email || '').trim().toLowerCase()))
+        .map(r => fromRow('contacts', r)),
+    }
+  } catch {
+    return empty
   }
 }
 

@@ -3,7 +3,12 @@ import { Sheet, Avatar } from './bits'
 import { STAGES, LEAD_STAGES, NETWORK_LABELS, defaultNextTouch, meetingsForContact, meetingBlurb, DEMO_MASK } from '../../utils/relationships'
 import { dateUtils } from '../../utils/dateUtils'
 
+// The call's suggestion wins when the Circleback processor left one;
+// otherwise a contact linked to a billable Client/Area reads as a client.
 function suggestStage(contact, companies) {
+  if (contact.suggestedStage && STAGES[contact.suggestedStage] && contact.suggestedStage !== 'needs_review') {
+    return contact.suggestedStage
+  }
   const record = companies.find(c => c.id === contact.companyId)
   if (record?.billable) return 'client'
   return ''
@@ -92,9 +97,13 @@ function ReviewCard({ contact, companies, meetings, demoMode, total, onSave, onS
             <button type="button" aria-pressed={stage === 'client'} onClick={() => setStage('client')} className={chip(stage === 'client')}>
               Client{suggested === 'client' && <span className="ml-1.5 text-[11px] font-semibold px-1.5 py-0.5 rounded bg-white text-navy-600">Suggested</span>}
             </button>
-            <button type="button" aria-pressed={stage === 'past_client'} onClick={() => setStage('past_client')} className={chip(stage === 'past_client')}>Past client</button>
+            <button type="button" aria-pressed={stage === 'past_client'} onClick={() => setStage('past_client')} className={chip(stage === 'past_client')}>
+              Past client{suggested === 'past_client' && <span className="ml-1.5 text-[11px] font-semibold px-1.5 py-0.5 rounded bg-white text-navy-600">Suggested</span>}
+            </button>
             {Object.entries(NETWORK_LABELS).map(([k, v]) => (
-              <button key={k} type="button" aria-pressed={stage === 'network' && networkLabel === k} onClick={() => setStage('network', k)} className={chip(stage === 'network' && networkLabel === k)}>{v}</button>
+              <button key={k} type="button" aria-pressed={stage === 'network' && networkLabel === k} onClick={() => setStage('network', k)} className={chip(stage === 'network' && networkLabel === k)}>
+                {v}{suggested === 'network' && contact.networkLabel === k && <span className="ml-1.5 text-[11px] font-semibold px-1.5 py-0.5 rounded bg-white text-navy-600">Suggested</span>}
+              </button>
             ))}
           </div>
         </fieldset>
