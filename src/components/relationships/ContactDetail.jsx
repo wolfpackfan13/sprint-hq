@@ -1,19 +1,57 @@
 import { useState } from 'react'
-import { ChevronLeft, Mail, Phone, Pencil, Check, PlayCircle, Plus, Building2, ChevronDown, ChevronUp } from 'lucide-react'
+import { ChevronLeft, Mail, Phone, Pencil, Check, PlayCircle, Plus, Building2, ChevronDown, ChevronUp, ExternalLink } from 'lucide-react'
 import { Avatar, SectionLabel } from './bits'
 import {
   STAGES, STAGE_ORDER, NETWORK_LABELS, SOURCES, DEMO_MASK,
   stageOf, segmentOf, touchStatus, touchLabel, meetingBlurb, lastContactDate,
 } from '../../utils/relationships'
+import { isCirclebackUrl } from '../../utils/circleback'
 import { dateUtils } from '../../utils/dateUtils'
 
 const card = 'bg-white border border-surface-300 rounded-xl p-4 md:p-5'
 
 function MeetingSourceTag({ meeting }) {
+  if (meeting.source === 'circleback') {
+    return <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded bg-[#FDECE6] text-[#A3360F]">Circleback</span>
+  }
   if (meeting.source === 'manual' && !meeting.recordingUrl) {
     return <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded bg-surface-200 text-navy-600">Logged</span>
   }
   return null
+}
+
+// Circleback imports link to the meeting page (notes, transcript, recording);
+// anything else is a recording.
+function MeetingLink({ url }) {
+  if (!url) return null
+  const circleback = isCirclebackUrl(url)
+  return (
+    <a href={url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[13px] font-medium text-blue-700 flex-shrink-0">
+      {circleback ? <><ExternalLink size={13} /> Circleback</> : <><PlayCircle size={14} /> Recording</>}
+    </a>
+  )
+}
+
+// The summary shows by default; a Circleback import also carries the full
+// notes, one tap away.
+function FullNotes({ meeting, demoMode }) {
+  const [open, setOpen] = useState(false)
+  const summary = (meeting.summary || '').trim()
+  let notes = (meeting.notes || '').trim()
+  // Circleback notes open with the overview the summary already shows.
+  const at = summary ? notes.indexOf(summary) : -1
+  if (at >= 0 && at < 40) notes = notes.slice(at + summary.length).trim()
+  if (!summary || !notes || notes === summary) return null
+  return (
+    <div>
+      <button onClick={() => setOpen(o => !o)} aria-expanded={open} className="inline-flex items-center gap-1 text-[13px] font-medium text-navy-600 hover:text-navy-900">
+        {open ? <ChevronUp size={14} /> : <ChevronDown size={14} />} {open ? 'Hide full notes' : 'Full notes'}
+      </button>
+      {open && (
+        <p className="mt-2 text-sm text-navy-700 leading-relaxed whitespace-pre-wrap border-l-2 border-surface-300 pl-3">{demoMode ? DEMO_MASK : notes}</p>
+      )}
+    </div>
+  )
 }
 
 function HistoryRow({ meeting, demoMode }) {
@@ -36,9 +74,10 @@ function HistoryRow({ meeting, demoMode }) {
       {open && body && (
         <div className="pb-3 pl-[68px] pr-2">
           <p className="text-sm text-navy-700 leading-relaxed whitespace-pre-wrap">{demoMode ? DEMO_MASK : body}</p>
-          {meeting.recordingUrl && (
-            <a href={meeting.recordingUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[13px] font-medium text-blue-700 mt-2"><PlayCircle size={14} /> Recording</a>
-          )}
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2">
+            <FullNotes meeting={meeting} demoMode={demoMode} />
+            <MeetingLink url={meeting.recordingUrl} />
+          </div>
         </div>
       )}
     </div>
@@ -145,9 +184,7 @@ export function ContactDetail({
         <div className={card}>
           <div className="flex justify-between items-baseline gap-3">
             <SectionLabel>Last conversation</SectionLabel>
-            {last?.recordingUrl && (
-              <a href={last.recordingUrl} target="_blank" rel="noreferrer" className="text-[13px] font-medium text-blue-700 flex items-center gap-1"><PlayCircle size={14} /> Recording</a>
-            )}
+            <MeetingLink url={last?.recordingUrl} />
           </div>
           {last ? (
             <div className="mt-2 space-y-2.5">
@@ -161,6 +198,7 @@ export function ContactDetail({
               {(last.summary || last.notes) && (
                 <p className="text-sm text-navy-700 leading-relaxed whitespace-pre-wrap">{mask((last.summary || last.notes).trim())}</p>
               )}
+              <FullNotes key={last.id} meeting={last} demoMode={demoMode} />
               {(last.actionItems || []).length > 0 && (
                 <div className="border-t border-surface-200 pt-2.5 space-y-1.5">
                   <p className="text-xs font-semibold text-navy-600">Action items</p>
@@ -174,7 +212,7 @@ export function ContactDetail({
               )}
             </div>
           ) : (
-            <p className="text-sm text-navy-600 mt-2">No meetings yet. Log a conversation above to start the history.</p>
+            <p className="text-sm text-navy-600 mt-2">No meetings yet. Log a conversation above, or paste a Circleback link there, to start the history.</p>
           )}
         </div>
 

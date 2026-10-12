@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
-import { Plus, Search, Inbox, ChevronDown, ChevronUp, Users } from 'lucide-react'
+import { Plus, Search, Inbox, ChevronDown, ChevronUp, Users, CalendarPlus } from 'lucide-react'
 import { Avatar } from '../components/relationships/bits'
 import { ContactDetail } from '../components/relationships/ContactDetail'
 import { ContactForm } from '../components/relationships/ContactForm'
@@ -55,9 +55,9 @@ function ContactRow({ contact, company, linked, lastDate, openTaskCount, selecte
 
 export function Relationships({
   contacts, allContacts, companies, meetings, tasks, demoMode,
-  focusContactId, onFocusHandled,
+  focusContactId, onFocusHandled, userEmail, ignore,
   onAdd, onUpdate, onUpdateMany, onDelete, onCompleteTouch,
-  onAddMeeting, onAddCompany, onDeleteCompany,
+  onAddMeeting, onUpdateMeeting, onAddCompany, onDeleteCompany,
   onCompleteTask, onEditTask, onOpenClient, onIgnoreEmail, showToast,
 }) {
   const [tab, setTab] = useState('leads')
@@ -72,7 +72,7 @@ export function Relationships({
   const [reviewOpen, setReviewOpen] = useState(false)
   const [convertId, setConvertId] = useState(null)
   const [touch, setTouch] = useState(null)        // { mode, contactId, stage? }
-  const [logId, setLogId] = useState(null)
+  const [log, setLog] = useState(null)            // { contactId } — null contactId logs from the header
 
   const people = useMemo(() => (allContacts || contacts).filter(c => !hiddenInDemo(c, demoMode)), [allContacts, contacts, demoMode])
   const visible = useMemo(() => contacts.filter(c => !hiddenInDemo(c, demoMode)), [contacts, demoMode])
@@ -203,16 +203,56 @@ export function Relationships({
     setTouch(null)
   }
 
-  const handleLog = ({ date, title, notes, nextTouchOn, nextTouchReason }) => {
-    const c = contactById(logId)
-    if (c) {
-      onAddMeeting({
-        title, date, notes, attendees: c.name || c.email || '',
-        contactIds: [c.id], companyId: c.companyId || null, source: 'manual',
+  // One meeting, linked to everyone picked. Attendees from a Circleback link
+  // who aren't contacts yet can be added to Needs review on the way in.
+  const handleLog = ({ existingMeetingId, meeting, contactIds, newPeople, nextTouch }) => {
+    const created = (newPeople || []).map(p => onAdd({
+      name: p.name || p.email.split('@')[0],
+      email: p.email,
+      stage: 'needs_review',
+      source: 'circleback',
+      sourceRef: meeting.externalId || null,
+      lastContactDate: meeting.date,
+    })).filter(Boolean)
+    const known = new Map([...people, ...created].map(c => [c.id, c]))
+    const ids = [...new Set([...contactIds, ...created.map(c => c.id)])]
+    const linked = ids.map(id => known.get(id)).filter(Boolean)
+    const companyId = linked.find(c => c.companyId)?.companyId || null
+
+    const existing = existingMeetingId ? meetings.find(m => m.id === existingMeetingId) : null
+    if (existing) {
+      // Same Circleback meeting saved before: add the people, fill blanks,
+      // and leave action items alone so tasks already pushed stay linked.
+      onUpdateMeeting(existing.id, {
+        contactIds: [...new Set([...(existing.contactIds || []), ...ids])],
+        summary: existing.summary || meeting.summary,
+        notes: existing.notes || meeting.notes,
+        recordingUrl: existing.recordingUrl || meeting.recordingUrl,
+        companyId: existing.companyId || companyId,
       })
-      onCompleteTouch(c.id, { nextTouchOn, nextTouchReason, contactedOn: date })
+    } else {
+      onAddMeeting({
+        ...meeting,
+        attendees: meeting.attendees || linked.map(c => c.name || c.email).filter(Boolean).join(', '),
+        contactIds: ids,
+        companyId,
+      })
     }
-    setLogId(null)
+
+    if (nextTouch) {
+      onCompleteTouch(nextTouch.contactId, {
+        nextTouchOn: nextTouch.nextTouchOn, nextTouchReason: nextTouch.nextTouchReason, contactedOn: meeting.date,
+      })
+    }
+
+    const first = (linked[0]?.name || linked[0]?.email || '').split(' ')[0]
+    const others = linked.length - 1
+    showToast?.({
+      message: `${existing ? 'Updated' : 'Logged'} with ${first}${others > 0 ? ` and ${others} other${others === 1 ? '' : 's'}` : ''}`
+        + (created.length ? ` · ${created.length} added to Needs review` : ''),
+      duration: 4000,
+    })
+    setLog(null)
   }
 
   const handleConvert = ({ newCompany, companyId, peerIds, nextTouchOn }) => {
@@ -253,7 +293,7 @@ export function Relationships({
   }
 
   const touchContact = touch ? contactById(touch.contactId) : null
-  const logContact = logId ? contactById(logId) : null
+  const logContact = log?.contactId ? contactById(log.contactId) : null
   const convertContact = convertId ? contactById(convertId) : null
 
   const renderDetail = (contact, withBack) => (
@@ -271,7 +311,7 @@ export function Relationships({
       onConvert={() => setConvertId(contact.id)}
       onDone={() => setTouch({ mode: 'done', contactId: contact.id })}
       onSnooze={() => setTouch({ mode: 'snooze', contactId: contact.id })}
-      onLog={() => setLogId(contact.id)}
+      onLog={() => setLog({ contactId: contact.id })}
       onCompleteTask={onCompleteTask}
       onEditTask={onEditTask}
       onOpenContact={(id) => select(id)}
@@ -291,9 +331,14 @@ export function Relationships({
               <h1 className="font-display font-bold text-navy-900 text-xl">Relationships</h1>
               <p className="text-navy-600 text-sm mt-0.5">{visible.length} {visible.length === 1 ? 'person' : 'people'}</p>
             </div>
-            <button onClick={() => setForm({ defaultStage: segDefaultStage })} className="btn-primary px-4 min-h-[40px] text-sm flex items-center gap-1.5">
-              <Plus size={15} strokeWidth={2.5} /> Add
-            </button>
+            <div className="flex items-center gap-2">
+              <button onClick={() => setLog({ contactId: null })} aria-label="Log a meeting" className="btn-ghost px-3 min-h-[40px] text-sm font-display font-semibold flex items-center gap-1.5">
+                <CalendarPlus size={15} /> Log<span className="hidden min-[400px]:inline md:hidden"> meeting</span>
+              </button>
+              <button onClick={() => setForm({ defaultStage: segDefaultStage })} className="btn-primary px-4 min-h-[40px] text-sm flex items-center gap-1.5">
+                <Plus size={15} strokeWidth={2.5} /> Add
+              </button>
+            </div>
           </div>
 
           {reviewQueue.length > 0 && (
@@ -413,8 +458,10 @@ export function Relationships({
         <NextTouchModal mode={touch.mode} contact={touchContact} stage={touch.stage} demoMode={demoMode}
           onSave={handleTouchSave} onClose={() => setTouch(null)} />
       )}
-      {logContact && (
-        <LogConversationModal contact={logContact} onSave={handleLog} onClose={() => setLogId(null)} />
+      {log && (log.contactId === null || logContact) && (
+        <LogConversationModal contact={logContact} contacts={people} allContacts={allContacts || contacts}
+          meetings={meetings} userEmail={userEmail} ignore={ignore}
+          onSave={handleLog} onClose={() => setLog(null)} />
       )}
     </div>
   )
