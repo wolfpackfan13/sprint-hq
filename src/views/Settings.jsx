@@ -15,10 +15,14 @@ export function Settings({ settings, saveSettings, google, onBackup, companies, 
     setTimeout(() => setSaved(false), 2000)
   }
 
+  const [backupError, setBackupError] = useState(null)
+
   const handleBackup = async () => {
     setBackupStatus('running')
+    setBackupError(null)
     const result = await onBackup()
     setBackupStatus(result.success ? 'success' : 'error')
+    if (!result.success) setBackupError(result.error || null)
     setTimeout(() => setBackupStatus(null), 3000)
   }
 
@@ -65,29 +69,47 @@ export function Settings({ settings, saveSettings, google, onBackup, companies, 
           </div>
 
           {googleClientId && (
-            <div className="flex gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               {settings.googleConnected ? (
-                <button onClick={google.disconnect}
-                  className="flex items-center gap-2 px-4 py-2 text-sm btn-ghost text-red-500 border-red-200 hover:bg-red-50">
-                  <Unlink size={14} /> Disconnect Google
-                </button>
+                <>
+                  {google.needsRenewal && (
+                    <button onClick={google.renew} disabled={google.signingIn}
+                      className="flex items-center gap-2 px-4 py-2 text-sm btn-primary">
+                      <Link size={14} /> {google.signingIn ? 'Opening…' : 'Refresh Google'}
+                    </button>
+                  )}
+                  <button onClick={google.disconnect}
+                    className="flex items-center gap-2 px-4 py-2 text-sm btn-ghost text-red-500 border-red-200 hover:bg-red-50">
+                    <Unlink size={14} /> Disconnect Google
+                  </button>
+                </>
               ) : (
                 <button onClick={() => {
-                  // Save the Client ID first, then connect — avoids the silent-fail
-                  // where connect reads the saved value but the input wasn't saved yet.
+                  // Save the Client ID and open Google's window in this same
+                  // tap. A timer here makes phone browsers block the window.
                   saveSettings({ googleClientId, anthropicKey })
-                  setTimeout(() => google.connect(), 150)
+                  google.connect(googleClientId)
                 }}
+                  disabled={google.signingIn}
                   className="flex items-center gap-2 px-4 py-2 text-sm btn-primary">
-                  <Link size={14} /> Connect Google
+                  <Link size={14} /> {google.signingIn ? 'Opening…' : 'Connect Google'}
                 </button>
               )}
-              {settings.googleConnected && (
+              {settings.googleConnected && !google.needsRenewal && (
                 <span className="flex items-center gap-1 text-xs text-forest-600 font-medium">
-                  <Check size={12} /> Connected
+                  <Check size={12} /> Connected{settings.googleEmail ? ` as ${settings.googleEmail}` : ''}
                 </span>
               )}
+              {settings.googleConnected && google.needsRenewal && (
+                <span className="text-xs text-navy-500">Linked. Sign-ins last an hour; one tap renews it.</span>
+              )}
             </div>
+          )}
+
+          {google.authError && (
+            <p className="mt-3 text-xs text-red-600 flex items-start gap-1.5">
+              <AlertCircle size={13} className="flex-shrink-0 mt-0.5" /> {google.authError}
+            </p>
           )}
 
           {settings.googleConnected && (
@@ -104,6 +126,7 @@ export function Settings({ settings, saveSettings, google, onBackup, companies, 
                   : 'Backup to Google Drive'}
               </button>
               <p className="text-xs text-navy-400 mt-1">Saves a JSON snapshot of all your data</p>
+              {backupError && <p className="text-xs text-red-600 mt-1">{backupError}</p>}
             </div>
           )}
         </div>

@@ -123,6 +123,14 @@ export const calUtils = {
   // YYYY-MM-DD for a Date
   iso(d) { return d.toISOString().split('T')[0] },
 
+  // Today's date where you are. dateUtils.today() uses UTC, which turns
+  // into tomorrow after 8 PM Eastern; the calendar needs the local day.
+  localToday() {
+    const d = new Date()
+    const pad = (n) => String(n).padStart(2, '0')
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+  },
+
   addDays(dateStr, n) {
     const d = new Date(dateStr + 'T12:00:00')
     d.setDate(d.getDate() + n)
