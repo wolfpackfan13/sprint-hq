@@ -341,7 +341,8 @@ Deno.serve(async (req: Request) => {
     }
   } catch (err) {
     if (err instanceof HttpError) return json({ ok: false, code: err.code, error: err.message }, err.status)
+    // Unexpected: the details go to the function logs, not the caller.
     console.error(err)
-    return json({ ok: false, code: "error", error: String((err as Error)?.message ?? err) }, 500)
+    return json({ ok: false, code: "error", error: "Something went wrong on the server. The details are in the Google-auth function logs in Supabase." }, 500)
   }
 })
