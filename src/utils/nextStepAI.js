@@ -32,6 +32,8 @@ export function buildBrief(contact, { linkedMeetings = [], linkedThreads = [], o
         ? { date: contact.nextTouchOn, reason: clip(contact.nextTouchReason, 160) } : null,
       referralTerms: clip(contact.referralTerms, 300),
     },
+    // The next step Sam set himself, if any; suggestions should fit with it.
+    samsOwnNextStep: contact.nextStep?.mine?.title ? { title: clip(contact.nextStep.mine.title, 160), by: contact.nextStep.mine.due || '' } : null,
     // Sam's own notes on them, newest first.
     notes: notesOf(contact).slice(0, 8).map(n => ({ date: localDateOf(n.at), text: clip(n.text, 400) })),
     booked: booked ? { title: booked.title, start: booked.start, withThem: true } : null,

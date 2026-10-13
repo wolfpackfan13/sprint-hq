@@ -119,6 +119,7 @@ export function Relationships({
   const [inviteId, setInviteId] = useState(null)
   const [merge, setMerge] = useState(null)        // { contactId, candidate? }
   const [aiState, setAiState] = useState({})      // contactId -> { loading, error }
+  const [aiTick, setAiTick] = useState(0)          // bumped when an answer lands, to re-check freshness
   const inFlight = useRef(new Set())
 
   const people = useMemo(() => (allContacts || contacts).filter(c => !hiddenInDemo(c, demoMode)), [allContacts, contacts, demoMode])
@@ -243,6 +244,10 @@ export function Relationships({
     return nextStepBasis(c, { last: lastTouch(ctx.linkedMeetings, ctx.linkedThreads), openTasks: ctx.openTasks, booked: ctx.booked, referrals: ctx.referrals })
   }
 
+  // The latest copy of everyone, for answers that arrive after a change.
+  const peopleRef = useRef(people)
+  peopleRef.current = people
+
   const requestStep = async (c, { force = false, dismissed } = {}) => {
     if (!c || stageOf(c) === 'needs_review') return
     if (aiUnavailable) {
@@ -260,8 +265,19 @@ export function Relationships({
     aiUnreachable = r.ok ? 0 : r.code === 'unreachable' ? aiUnreachable + 1 : aiUnreachable
     if (aiUnreachable >= 2) aiUnavailable = true
     if (r.ok) {
-      onUpdate(c.id, { nextStep: { summary: r.summary, steps: r.steps, basis, generatedAt: new Date().toISOString(), dismissed: keepDismissed } })
+      // Keep what you did while it was thinking: steps you removed and the
+      // step you wrote yourself.
+      const latest = peopleRef.current.find(x => x.id === c.id) || c
+      const ns = latest.nextStep || {}
+      onUpdate(c.id, { nextStep: {
+        summary: r.summary, steps: r.steps, basis, generatedAt: new Date().toISOString(),
+        dismissed: [...new Set([...keepDismissed, ...(ns.dismissed || [])])],
+        mine: ns.mine || null,
+      } })
       setAiState(s => ({ ...s, [c.id]: { loading: false } }))
+      // If something changed while it was thinking, the check below runs
+      // again with fresh data and asks for the new picture.
+      setAiTick(t => t + 1)
     } else {
       // Not deployed, or deployed without what it needs: stop asking this session.
       if (['not_deployed', 'forbidden', 'no_owner', 'no_key'].includes(r.code)) aiUnavailable = true
@@ -276,7 +292,7 @@ export function Relationships({
   useEffect(() => {
     if (shownContact) requestStep(shownContact)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [shownContact?.id, shownBasis])
+  }, [shownContact?.id, shownBasis, aiTick])
 
   const anotherStep = (c, title) => {
     const ns = c.nextStep
@@ -285,6 +301,18 @@ export function Relationships({
     const left = (ns?.steps || []).filter(s => !dismissed.includes(s.title) && !open.some(t => sameTaskTitle(t.title, s.title)))
     if (ns && left.length && ns.basis === basisFor(c)) onUpdate(c.id, { nextStep: { ...ns, dismissed } })
     else requestStep(c, { force: true, dismissed })
+  }
+
+  // Your own next step, or none. Replacing a suggestion also removes it, so
+  // it doesn't come back when your step is done.
+  const setMine = (c, step, { dismiss } = {}) => {
+    const ns = c.nextStep || {}
+    const dismissedList = dismiss ? [...new Set([...(ns.dismissed || []), dismiss])] : (ns.dismissed || [])
+    onUpdate(c.id, { nextStep: { ...ns, mine: step || null, dismissed: dismissedList } })
+  }
+  const dismissStep = (c, title) => {
+    const ns = c.nextStep || {}
+    onUpdate(c.id, { nextStep: { ...ns, dismissed: [...new Set([...(ns.dismissed || []), title])] } })
   }
 
   // A step you acted on (task added, Gmail opened) is done as a suggestion:
@@ -470,6 +498,8 @@ export function Relationships({
 
   const handleScheduled = (contact, result) => {
     onScheduled?.(contact, result, schedule?.event || null)
+    // Booking the meeting you set as your next step completes it.
+    if (schedule?.step?.fromMine && !result?.rescheduled) setMine(contact, null)
     setSchedule(null)
   }
 
@@ -508,6 +538,8 @@ export function Relationships({
       aiState={aiState[contact.id]}
       aiFresh={!contact.nextStep || contact.nextStep.basis === basisFor(contact)}
       onUsedStep={(title) => usedStep(contact, title)}
+      onSetMine={(step, opts) => setMine(contact, step, opts)}
+      onDismissStep={(title) => dismissStep(contact, title)}
       onBack={withBack ? () => setMobileDetail(false) : null}
       onEdit={() => setForm({ contact })}
       onStageChange={(s) => handleStageChange(contact, s)}

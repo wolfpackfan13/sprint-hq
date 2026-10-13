@@ -1,14 +1,14 @@
 import { useState, useRef, useEffect } from 'react'
 import {
   ChevronLeft, Mail, Phone, MoreHorizontal, Check, PlayCircle, Plus, Building2, ChevronDown, ChevronUp,
-  ExternalLink, Sparkles, RefreshCw, CalendarPlus, CalendarDays, PenLine, MessageSquare, Gift, Loader2, AlertCircle, Users, StickyNote,
+  ExternalLink, Sparkles, RefreshCw, CalendarPlus, CalendarDays, PenLine, MessageSquare, Gift, Loader2, AlertCircle, Users, StickyNote, X,
 } from 'lucide-react'
 import { Avatar } from './bits'
 import {
   STAGES, BUSINESS_STAGES, REFERRAL_STAGES, NETWORK_LABELS, SOURCES, DEMO_MASK,
   stageOf, segmentOf, referralStageOf, isPartner, meetingBlurb, lastContactDate, localDateOf, firstNameOf,
   gmailThreadUrl, gmailComposeUrl, historyItems, whoWroteLast, clientHistoryLabel, rewardsOwed, hasSigned,
-  money, timeRange, fallbackStep, fallbackSummary, lastTouch, emailsOf, shortDay, lower, sameTaskTitle, notesOf,
+  money, timeRange, fallbackStep, fallbackSummary, lastTouch, emailsOf, shortDay, lower, sameTaskTitle, notesOf, daysBetween,
 } from '../../utils/relationships'
 import { isCirclebackUrl } from '../../utils/circleback'
 import { safeUrl } from '../../utils/safeUrl'
@@ -140,7 +140,7 @@ function Fold({ id, title, count, countTone = 'neutral', preview, open, onToggle
   )
 }
 
-function MoreMenu({ items }) {
+function MoreMenu({ items, label = 'More actions', buttonClass = 'btn-ghost w-10 h-10 flex items-center justify-center' }) {
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
   useEffect(() => {
@@ -153,8 +153,8 @@ function MoreMenu({ items }) {
   }, [open])
   return (
     <div ref={ref} className="relative">
-      <button onClick={() => setOpen(o => !o)} aria-haspopup="menu" aria-expanded={open} aria-label="More actions"
-        className="btn-ghost w-10 h-10 flex items-center justify-center"><MoreHorizontal size={17} /></button>
+      <button onClick={() => setOpen(o => !o)} aria-haspopup="menu" aria-expanded={open} aria-label={label}
+        className={buttonClass}><MoreHorizontal size={17} /></button>
       {open && (
         <div role="menu" className="absolute right-0 top-11 z-30 w-56 bg-white border border-surface-300 rounded-xl shadow-modal py-1">
           {items.filter(Boolean).map(it => (
@@ -304,16 +304,43 @@ function NextStepCard({
   contact, firstName, toLog, overdueTask, owed, booked, ai, aiState, last, gmailAccount, demoMode, contactsById,
   onLog, onDismissToLog, onCompleteTask, onEditTask, onSetReward, onMarkPaid, onSchedule, onAddTask, onInvite,
   onRefresh, onAnother, onQuietAddTask, onQuietAddNote, openTasks = [], contacts = [], onUpdate, onMerge, aiFresh = true, onUsedStep,
+  onSetMine, onDismissStep,
 }) {
   const [rewardAmount, setRewardAmount] = useState('')
   const mask = (t) => (demoMode && t ? DEMO_MASK : t)
   // A suggestion built before the latest change (a task added, notes
   // logged) is out of date: show the rule-based one until the new one comes.
   const aiNow = aiFresh ? ai : null
+  // Steps you removed, and the one you wrote yourself, hold whatever the AI
+  // says next.
+  const dismissed = ai?.dismissed || []
+  const mine = ai?.mine?.title ? ai.mine : null
   // Anything already on their task list isn't a new idea.
-  const aiSteps = (aiNow?.steps || []).filter(s => s && s.title && !(aiNow.dismissed || []).includes(s.title)
+  const aiSteps = (aiNow?.steps || []).filter(s => s && s.title && !dismissed.includes(s.title)
     && !openTasks.some(t => sameTaskTitle(t.title, s.title)))
-  const suggestion = aiSteps[0] || fallbackStep(contact, { last, firstName })
+  const fallback = fallbackStep(contact, { last, firstName })
+  const suggestion = aiSteps[0] || (dismissed.includes(fallback.title) ? null : fallback)
+
+  // Writing or changing the next step.
+  const [draft, setDraft] = useState(null) // { kind, title, due, from }
+  const stepToDraft = (s, from) => ({
+    kind: { schedule: 'schedule', email: 'email', task: 'task' }[s?.kind] || 'reminder',
+    title: s?.title || '',
+    due: s?.due || s?.day || (s?.dueInDays != null ? calUtils.addDays(calUtils.localToday(), s.dueInDays) : ''),
+    from: from || '',
+  })
+  const saveDraft = (e) => {
+    e?.preventDefault()
+    const title = (draft?.title || '').trim()
+    if (!title) return
+    onSetMine({ kind: draft.kind, title, due: draft.due || '', setAt: new Date().toISOString() }, { dismiss: draft.from && draft.from !== title ? draft.from : '' })
+    setDraft(null)
+  }
+  // Your own step as something StepAction can act on.
+  const mineAsStep = mine && {
+    kind: mine.kind, title: mine.title, eventTitle: mine.title, minutes: 30, day: mine.due || '', fromMine: true,
+    dueInDays: mine.due ? Math.max(0, daysBetween(calUtils.localToday(), mine.due) ?? 0) : undefined,
+  }
   const prep = aiSteps.find(s => s.kind !== 'schedule')
   const summary = aiNow?.summary || fallbackSummary(contact, { last, firstName })
   const partnerOwed = owed[0]
@@ -323,9 +350,11 @@ function NextStepCard({
   const queue = []
   if (toLog[0]) queue.push({ mode: 'log', item: toLog[0], line: `Add notes from ${toLog[0].title || 'your meeting'}` })
   if (overdueTask) queue.push({ mode: 'task', task: overdueTask, line: `Finish: ${mask(overdueTask.title)}` })
+  if (mine) queue.push({ mode: 'mine', step: mine, line: mask(mine.title) })
   if (partnerOwed) queue.push({ mode: 'reward', referral: partnerOwed, line: `Send ${firstName} the reward for ${partnerOwed.company || partnerOwed.name}` })
   if (booked) queue.push({ mode: 'booked', event: booked, line: `${booked.title} on ${shortDay(localDateOf(booked.start))}` })
-  else queue.push({ mode: 'suggest', step: suggestion, line: mask(suggestion.title) })
+  else if (suggestion) queue.push({ mode: 'suggest', step: suggestion, line: mask(suggestion.title) })
+  else queue.push({ mode: 'empty', line: '' })
   const current = queue[0]
   const upNext = queue[1]
 
@@ -335,9 +364,22 @@ function NextStepCard({
     reward: { icon: <Gift size={14} />, text: 'Reward owed' },
     booked: { icon: <CalendarDays size={14} />, text: 'Next step · booked' },
     suggest: { icon: <Sparkles size={14} />, text: aiSteps.length ? 'Suggested next step' : 'Next step' },
+    mine: { icon: <PenLine size={14} />, text: 'Your next step' },
+    empty: { icon: <Sparkles size={14} />, text: 'Next step' },
   }[current.mode]
+  const shownLabel = draft ? { icon: <PenLine size={14} />, text: draft.from || mine ? 'Change next step' : 'Your next step' } : label
   const referralTag = current.mode === 'reward' || (current.mode === 'suggest' && current.step.kind === 'invite')
-  const canRefresh = current.mode === 'suggest' || current.mode === 'booked'
+  const canRefresh = !draft && (current.mode === 'suggest' || current.mode === 'booked' || current.mode === 'empty')
+  const stepMenu = draft ? [] : current.mode === 'suggest' ? [
+    { label: 'Change this step', icon: <PenLine size={15} className="text-navy-500" />, onClick: () => setDraft(stepToDraft(current.step, current.step.title)) },
+    { label: 'Remove this suggestion', icon: <X size={15} className="text-navy-500" />, onClick: () => onDismissStep(current.step.title) },
+    { label: 'Write my own', icon: <Plus size={15} className="text-navy-500" />, onClick: () => setDraft(stepToDraft(null)) },
+  ] : current.mode === 'mine' ? [
+    { label: 'Edit my next step', icon: <PenLine size={15} className="text-navy-500" />, onClick: () => setDraft(stepToDraft(mine)) },
+    { label: 'Remove my next step', icon: <X size={15} className="text-navy-500" />, onClick: () => onSetMine(null) },
+  ] : current.mode === 'empty' ? [] : [
+    { label: 'Set my own next step', icon: <PenLine size={15} className="text-navy-500" />, onClick: () => setDraft(stepToDraft(null)) },
+  ]
 
   const partnerThanks = partnerOwed ? gmailComposeUrl({
     to: contact.email || '',
@@ -350,17 +392,49 @@ function NextStepCard({
     <section aria-label="Next step" className="rounded-2xl border border-[#FBE3B4] bg-gold-50 p-[18px] md:p-6 space-y-3">
       <div className="flex justify-between items-center -mt-1.5 -mr-2">
         <div className="flex items-center gap-2">
-          <span className="flex items-center gap-1.5 font-display font-bold text-[11px] uppercase tracking-[0.08em] text-[#8A5500]">{label.icon}{label.text}</span>
+          <span className="flex items-center gap-1.5 font-display font-bold text-[11px] uppercase tracking-[0.08em] text-[#8A5500]">{shownLabel.icon}{shownLabel.text}</span>
           {referralTag && <span className="text-[11px] font-semibold px-[7px] py-px rounded-full bg-[#F1ECFD] text-[#5B21B6]">Referral</span>}
         </div>
-        {canRefresh ? (
-          <button onClick={onRefresh} disabled={aiState?.loading} aria-label="Refresh suggestion" className="w-9 h-9 flex items-center justify-center text-[#8A5500] rounded-lg hover:bg-[#FEF6E4] disabled:opacity-60">
-            {aiState?.loading ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
-          </button>
-        ) : <span className="h-9" />}
+        <div className="flex items-center">
+          {canRefresh && (
+            <button onClick={onRefresh} disabled={aiState?.loading} aria-label="Refresh suggestion" className="w-9 h-9 flex items-center justify-center text-[#8A5500] rounded-lg hover:bg-[#FEF6E4] disabled:opacity-60">
+              {aiState?.loading ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
+            </button>
+          )}
+          {stepMenu.length > 0 && (
+            <MoreMenu items={stepMenu} label="Change or remove the next step"
+              buttonClass="w-9 h-9 flex items-center justify-center text-[#8A5500] rounded-lg hover:bg-[#FEF6E4]" />
+          )}
+          {!canRefresh && !stepMenu.length && <span className="h-9" />}
+        </div>
       </div>
 
-      {current.mode === 'log' && (
+      {draft && (
+        <form onSubmit={saveDraft} className="space-y-3">
+          <div>
+            <label htmlFor={`mine-title-${contact.id}`} className="block text-xs font-semibold text-[#6B4300] mb-1">Next step with {firstName}</label>
+            <input id={`mine-title-${contact.id}`} value={draft.title} autoFocus onChange={e => setDraft({ ...draft, title: e.target.value })}
+              placeholder={`What's next with ${firstName}?`} className="w-full input-base bg-white px-3 min-h-[46px] text-[15px]" />
+          </div>
+          <div role="group" aria-label="What kind of step" className="flex flex-wrap gap-1.5">
+            {[['reminder', 'Reminder'], ['schedule', 'Meeting'], ['email', 'Email'], ['task', 'Task']].map(([k, l]) => (
+              <button key={k} type="button" aria-pressed={draft.kind === k} onClick={() => setDraft({ ...draft, kind: k })}
+                className={`min-h-[36px] px-3 rounded-full border text-[13px] font-semibold ${draft.kind === k ? 'border-[#A86800] bg-white text-[#7A4E00]' : 'border-[#F5D9A0] bg-transparent text-navy-600'}`}>{l}</button>
+            ))}
+          </div>
+          <label className="flex items-center gap-2 text-[13px] text-navy-700">
+            By when <span className="text-navy-500">(optional)</span>
+            <input type="date" min={calUtils.localToday()} value={draft.due} onChange={e => setDraft({ ...draft, due: e.target.value })}
+              className="input-base bg-white px-2 min-h-[38px] text-sm" />
+          </label>
+          <div className="flex gap-2">
+            <button type="submit" disabled={!draft.title.trim()} className={`${btnPrimary} flex-[3] disabled:opacity-50`}><Check size={15} />Save</button>
+            <button type="button" onClick={() => setDraft(null)} className={`${btnSecondary} flex-[2]`}>Cancel</button>
+          </div>
+        </form>
+      )}
+
+      {!draft && current.mode === 'log' && (
         <>
           <h2 className="font-display font-bold text-navy-900 text-xl md:text-[22px] leading-snug">Add notes from {current.item.title ? `"${current.item.title}"` : 'your meeting'}</h2>
           <p className="text-sm text-navy-700 leading-relaxed">
@@ -373,7 +447,7 @@ function NextStepCard({
         </>
       )}
 
-      {current.mode === 'task' && (
+      {!draft && current.mode === 'task' && (
         <>
           <h2 className="font-display font-bold text-navy-900 text-xl md:text-[22px] leading-snug">{mask(current.task.title)}</h2>
           <p className="text-sm text-navy-700">Was due {dateUtils.format(current.task.dueDate, 'long')}.</p>
@@ -384,7 +458,7 @@ function NextStepCard({
         </>
       )}
 
-      {current.mode === 'reward' && (
+      {!draft && current.mode === 'reward' && (
         <>
           <h2 className="font-display font-bold text-navy-900 text-xl md:text-[22px] leading-snug">
             {current.referral.rewardAmount != null && current.referral.rewardAmount !== ''
@@ -411,7 +485,7 @@ function NextStepCard({
         </>
       )}
 
-      {current.mode === 'booked' && (
+      {!draft && current.mode === 'booked' && (
         <>
           <div className="flex gap-3 items-start">
             <DateTile start={current.event.start} />
@@ -467,7 +541,7 @@ function NextStepCard({
         </>
       )}
 
-      {current.mode === 'suggest' && (
+      {!draft && current.mode === 'suggest' && (
         <>
           <h2 className="font-display font-bold text-navy-900 text-xl md:text-[22px] leading-snug">{mask(current.step.title)}</h2>
           <p className="text-sm text-navy-700 leading-relaxed">{mask(aiNow?.summary ? summary : (current.step.why || summary))}</p>
@@ -479,7 +553,37 @@ function NextStepCard({
         </>
       )}
 
-      {upNext && current.mode !== 'suggest' && current.mode !== 'booked' && (
+      {!draft && current.mode === 'mine' && (
+        <>
+          <h2 className="font-display font-bold text-navy-900 text-xl md:text-[22px] leading-snug">{mask(mine.title)}</h2>
+          <p className="text-sm text-navy-700">
+            {[mine.due ? `By ${shortDay(mine.due)}` : '', `Set by you${mine.setAt ? ` on ${dateUtils.format(localDateOf(mine.setAt), 'short')}` : ''}`].filter(Boolean).join(' · ')}
+          </p>
+          <div className="flex gap-2 pt-0.5">
+            {mine.kind === 'reminder' || mine.kind === 'invite'
+              ? <button onClick={() => onSetMine(null)} className={`${btnPrimary} flex-[3]`}><Check size={15} />Done</button>
+              : <StepAction step={mineAsStep} contact={contact} firstName={firstName} gmailAccount={gmailAccount} onSchedule={onSchedule} onAddTask={onAddTask} onInvite={onInvite}
+                  onUsed={() => { if (mine.kind === 'task') onSetMine(null) }} />}
+            {mine.kind === 'reminder' || mine.kind === 'invite'
+              ? <button onClick={() => setDraft(stepToDraft(mine))} className={`${btnSecondary} flex-[2]`}>Edit</button>
+              : <button onClick={() => onSetMine(null)} className={`${btnSecondary} flex-[2]`}>Done</button>}
+          </div>
+        </>
+      )}
+
+      {!draft && current.mode === 'empty' && (
+        <>
+          <h2 className="font-display font-bold text-navy-900 text-xl md:text-[22px] leading-snug">No next step for {firstName}</h2>
+          <p className="text-sm text-navy-700">Write your own, or ask for a fresh suggestion.</p>
+          <div className="flex gap-2 pt-0.5">
+            <button onClick={() => setDraft(stepToDraft(null))} className={`${btnPrimary} flex-[3]`}><PenLine size={15} />Write my own</button>
+            <button onClick={onRefresh} disabled={aiState?.loading} className={`${btnSecondary} flex-[2] disabled:opacity-60`}>Suggest one</button>
+          </div>
+          {aiState?.error && <p className="text-xs text-[#7A4E00]">{aiState.error}</p>}
+        </>
+      )}
+
+      {!draft && upNext && current.mode !== 'suggest' && current.mode !== 'booked' && current.mode !== 'empty' && (
         <p className="text-[13px] text-navy-600 pt-1"><span className="font-semibold text-[#6B4300]">Up next</span> {upNext.line}</p>
       )}
 
@@ -506,7 +610,7 @@ export function ContactDetail({
   onBack, onEdit, onStageChange, onReferralStageChange, onConvert, onMerge, onNotSame,
   onLog, onDismissToLog, onSchedule, onInvite, onAddTask, onCompleteTask, onEditTask,
   onOpenContact, onOpenClient, onUpdate, onSetReward, onMarkPaid, onRefreshStep, onAnotherStep,
-  aiFresh = true, onUsedStep = () => {},
+  aiFresh = true, onUsedStep = () => {}, onSetMine = () => {}, onDismissStep = () => {},
 }) {
   const stage = stageOf(contact)
   const segment = segmentOf(contact)
@@ -669,7 +773,7 @@ export function ContactDetail({
           onSetReward={onSetReward} onMarkPaid={onMarkPaid} onSchedule={onSchedule} onAddTask={onAddTask} onInvite={onInvite}
           onRefresh={onRefreshStep} onAnother={onAnotherStep} onQuietAddTask={openAddTask} onQuietAddNote={openAddNote}
           openTasks={openTasks} contacts={contacts} onUpdate={onUpdate} onMerge={onMerge}
-          aiFresh={aiFresh} onUsedStep={onUsedStep}
+          aiFresh={aiFresh} onUsedStep={onUsedStep} onSetMine={onSetMine} onDismissStep={onDismissStep}
         />
 
         {/* Everything else, folded */}
