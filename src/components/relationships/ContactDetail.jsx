@@ -1,18 +1,19 @@
 import { useState, useRef, useEffect } from 'react'
 import {
   ChevronLeft, Mail, Phone, MoreHorizontal, Check, PlayCircle, Plus, Building2, ChevronDown, ChevronUp,
-  ExternalLink, Sparkles, RefreshCw, CalendarPlus, CalendarDays, PenLine, MessageSquare, Gift, Loader2, AlertCircle, Users,
+  ExternalLink, Sparkles, RefreshCw, CalendarPlus, CalendarDays, PenLine, MessageSquare, Gift, Loader2, AlertCircle, Users, StickyNote,
 } from 'lucide-react'
 import { Avatar } from './bits'
 import {
   STAGES, BUSINESS_STAGES, REFERRAL_STAGES, NETWORK_LABELS, SOURCES, DEMO_MASK,
   stageOf, segmentOf, referralStageOf, isPartner, meetingBlurb, lastContactDate, localDateOf, firstNameOf,
   gmailThreadUrl, gmailComposeUrl, historyItems, whoWroteLast, clientHistoryLabel, rewardsOwed, hasSigned,
-  money, timeRange, fallbackStep, fallbackSummary, lastTouch, emailsOf, shortDay, lower, sameTaskTitle,
+  money, timeRange, fallbackStep, fallbackSummary, lastTouch, emailsOf, shortDay, lower, sameTaskTitle, notesOf,
 } from '../../utils/relationships'
 import { isCirclebackUrl } from '../../utils/circleback'
 import { safeUrl } from '../../utils/safeUrl'
 import { dateUtils, calUtils } from '../../utils/dateUtils'
+import { genId } from '../../utils/ids'
 
 const card = 'bg-white border border-surface-300 rounded-[14px]'
 const chipSelect = 'text-xs font-semibold pl-2.5 pr-7 py-1.5 rounded-full border appearance-none cursor-pointer bg-no-repeat bg-[right_8px_center] min-h-[32px]'
@@ -302,7 +303,7 @@ function StepAction({ step, contact, firstName, gmailAccount, onSchedule, onAddT
 function NextStepCard({
   contact, firstName, toLog, overdueTask, owed, booked, ai, aiState, last, gmailAccount, demoMode, contactsById,
   onLog, onDismissToLog, onCompleteTask, onEditTask, onSetReward, onMarkPaid, onSchedule, onAddTask, onInvite,
-  onRefresh, onAnother, onQuietAddTask, openTasks = [], contacts = [], onUpdate, onMerge, aiFresh = true, onUsedStep,
+  onRefresh, onAnother, onQuietAddTask, onQuietAddNote, openTasks = [], contacts = [], onUpdate, onMerge, aiFresh = true, onUsedStep,
 }) {
   const [rewardAmount, setRewardAmount] = useState('')
   const mask = (t) => (demoMode && t ? DEMO_MASK : t)
@@ -484,7 +485,10 @@ function NextStepCard({
 
       <div className="flex border-t border-[#F5E3BD] -mx-1.5 -mb-2 pt-0.5">
         <button onClick={() => onLog()} className="flex-1 min-h-[44px] flex items-center justify-center gap-1.5 text-[13px] font-medium text-navy-600 hover:text-navy-900">
-          <MessageSquare size={14} /> Log a conversation
+          <MessageSquare size={14} /> <span>Log<span className="hidden sm:inline"> a conversation</span></span>
+        </button>
+        <button onClick={onQuietAddNote} className="flex-1 min-h-[44px] flex items-center justify-center gap-1.5 text-[13px] font-medium text-navy-600 hover:text-navy-900">
+          <StickyNote size={14} /> Add a note
         </button>
         <button onClick={onQuietAddTask} className="flex-1 min-h-[44px] flex items-center justify-center gap-1.5 text-[13px] font-medium text-navy-600 hover:text-navy-900">
           <Plus size={14} /> Add a task
@@ -532,6 +536,33 @@ export function ContactDetail({
     setOpenFolds(s => new Set([...s, 'tasks']))
     setTimeout(() => taskInput.current?.focus(), 30)
   }
+
+  // Notes: dated, newest first, kept on the contact.
+  const notes = notesOf(contact)
+  const [noteText, setNoteText] = useState('')
+  const [editingNote, setEditingNote] = useState(null)   // { id, text }
+  const [deletingNote, setDeletingNote] = useState(null) // id
+  const noteInput = useRef(null)
+  const openAddNote = () => {
+    setOpenFolds(s => new Set([...s, 'notes']))
+    setTimeout(() => noteInput.current?.focus(), 30)
+  }
+  const saveNotes = (list) => onUpdate({ notesLog: list })
+  const addNote = (e) => {
+    e?.preventDefault()
+    const text = noteText.trim()
+    if (!text) return
+    saveNotes([{ id: genId('note'), at: new Date().toISOString(), text }, ...notes])
+    setNoteText('')
+  }
+  const saveEdit = () => {
+    const text = (editingNote?.text || '').trim()
+    if (!text) return
+    saveNotes(notes.map(n => (n.id === editingNote.id ? { ...n, text, editedAt: new Date().toISOString() } : n)))
+    setEditingNote(null)
+  }
+  const deleteNote = (id) => { saveNotes(notes.filter(n => n.id !== id)); setDeletingNote(null) }
+  const submitOnCmdEnter = (fn) => (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); fn() } }
   const submitTask = (e) => {
     e.preventDefault()
     if (!taskTitle.trim()) return
@@ -636,7 +667,7 @@ export function ContactDetail({
           ai={contact.nextStep} aiState={aiState} last={last} gmailAccount={gmailAccount} demoMode={demoMode}
           onLog={onLog} onDismissToLog={onDismissToLog} onCompleteTask={onCompleteTask} onEditTask={onEditTask}
           onSetReward={onSetReward} onMarkPaid={onMarkPaid} onSchedule={onSchedule} onAddTask={onAddTask} onInvite={onInvite}
-          onRefresh={onRefreshStep} onAnother={onAnotherStep} onQuietAddTask={openAddTask}
+          onRefresh={onRefreshStep} onAnother={onAnotherStep} onQuietAddTask={openAddTask} onQuietAddNote={openAddNote}
           openTasks={openTasks} contacts={contacts} onUpdate={onUpdate} onMerge={onMerge}
           aiFresh={aiFresh} onUsedStep={onUsedStep}
         />
@@ -677,6 +708,58 @@ export function ContactDetail({
                   className="w-[132px] input-base px-2 min-h-[42px] text-sm" />
                 <button type="submit" disabled={!taskTitle.trim()} className="px-3.5 min-h-[42px] rounded-[10px] bg-navy-900 text-white text-sm font-display font-semibold disabled:opacity-40">Add</button>
               </form>
+            </div>
+          </Fold>
+
+          <Fold id="notes" title="Notes" count={notes.length} open={openFolds.has('notes')} onToggle={toggle}
+            preview={notes[0] ? `${dateUtils.format(localDateOf(notes[0].at), 'short')} · ${mask(notes[0].text.split('\n')[0])}` : `Add what you learn about ${firstName}`}>
+            <div className="space-y-3">
+              <form onSubmit={addNote} className="space-y-2">
+                <label htmlFor={`add-note-${contact.id}`} className="sr-only">Add a note about {firstName}</label>
+                <textarea id={`add-note-${contact.id}`} ref={noteInput} value={noteText} rows={noteText.length > 80 ? 4 : 2}
+                  onChange={e => setNoteText(e.target.value)} onKeyDown={submitOnCmdEnter(addNote)}
+                  placeholder={`Add a note about ${firstName}`}
+                  className="w-full input-base px-3 py-2.5 text-sm resize-y" />
+                <div className="flex justify-end">
+                  <button type="submit" disabled={!noteText.trim()} className="px-3.5 min-h-[40px] rounded-[10px] bg-navy-900 text-white text-sm font-display font-semibold disabled:opacity-40">Save note</button>
+                </div>
+              </form>
+              {notes.map(n => (
+                <div key={n.id} className="rounded-[10px] border border-surface-300 p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs font-semibold text-navy-600">
+                      {dateUtils.format(localDateOf(n.at), 'short')}{n.editedAt ? ' · edited' : ''}
+                    </p>
+                    {editingNote?.id !== n.id && (
+                      deletingNote === n.id ? (
+                        <span className="flex items-center gap-1">
+                          <button onClick={() => deleteNote(n.id)} className="text-xs font-semibold text-red-700 min-h-[32px] px-2">Delete</button>
+                          <button onClick={() => setDeletingNote(null)} className="text-xs font-medium text-navy-600 min-h-[32px] px-2">Keep</button>
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-1">
+                          <button onClick={() => { setEditingNote({ id: n.id, text: n.text }); setDeletingNote(null) }} className="text-xs font-medium text-navy-600 hover:text-navy-900 min-h-[32px] px-2">Edit</button>
+                          <button onClick={() => setDeletingNote(n.id)} aria-label="Delete note" className="text-xs font-medium text-navy-600 hover:text-red-700 min-h-[32px] px-2">Delete</button>
+                        </span>
+                      )
+                    )}
+                  </div>
+                  {editingNote?.id === n.id ? (
+                    <div className="mt-1.5 space-y-2">
+                      <label htmlFor={`edit-note-${n.id}`} className="sr-only">Edit note</label>
+                      <textarea id={`edit-note-${n.id}`} value={editingNote.text} autoFocus rows={3}
+                        onChange={e => setEditingNote({ ...editingNote, text: e.target.value })} onKeyDown={submitOnCmdEnter(saveEdit)}
+                        className="w-full input-base px-3 py-2 text-sm resize-y" />
+                      <div className="flex justify-end gap-2">
+                        <button onClick={() => setEditingNote(null)} className="px-3 min-h-[36px] text-sm text-navy-600">Cancel</button>
+                        <button onClick={saveEdit} disabled={!editingNote.text.trim()} className="px-3.5 min-h-[36px] rounded-[10px] bg-navy-900 text-white text-sm font-display font-semibold disabled:opacity-40">Save</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-navy-800 leading-relaxed mt-1 whitespace-pre-wrap break-words">{mask(n.text)}</p>
+                  )}
+                </div>
+              ))}
             </div>
           </Fold>
 

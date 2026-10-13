@@ -41,6 +41,7 @@ export function useContacts() {
       rewardPaidOn: '',
       clientUntil: '',
       otherEmails: [],
+      notesLog: [],
       nextStep: null,
       source: null,
       referredBy: null,

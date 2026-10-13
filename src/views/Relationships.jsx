@@ -183,7 +183,7 @@ export function Relationships({
   const q = search.trim().toLowerCase()
   const inTab = visible
     .filter(c => tabsFor(c).includes(tab))
-    .filter(c => !q || [c.name, c.company, c.email, c.role, ...(c.otherEmails || [])].some(v => (v || '').toLowerCase().includes(q)))
+    .filter(c => !q || [c.name, c.company, c.email, c.role, ...(c.otherEmails || []), ...(demoMode ? [] : [c.notes, ...(c.notesLog || []).map(n => n?.text)])].some(v => (v || '').toLowerCase().includes(q)))
 
   const groups = useMemo(() => {
     const isPast = (c) => stageOf(c) === 'past_client'
