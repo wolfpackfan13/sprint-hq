@@ -2,9 +2,15 @@ import { useState } from 'react'
 import { CalendarClock, Sparkles, RefreshCw, Check, Plus, AlertCircle, Link2 } from 'lucide-react'
 import { matchCalendarToTasks } from '../utils/calendarMatch'
 import { dateUtils } from '../utils/dateUtils'
+import { genId } from '../utils/ids'
+import { contactsOnInvite, lastTimeLine, contactLink } from '../utils/relationships'
 import { GoogleStatus } from './Calendar'
 
-export function PrepDay({ companies, projects, google, settings, onCreateTasks, onOpenSettings }) {
+// At most this many people per meeting get a "Last time" line, so a big
+// invite doesn't bury the prep task under notes.
+const MAX_PEOPLE_PER_TASK = 3
+
+export function PrepDay({ companies, projects, google, settings, onCreateTasks, onOpenSettings, contacts = [], meetings = [], userEmail, demoMode = false, onOpenContact }) {
   const [proposals, setProposals] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
@@ -40,15 +46,30 @@ export function PrepDay({ companies, projects, google, settings, onCreateTasks, 
 
   const acceptedCount = proposals.filter(p => p.accepted).length
 
+  // People on the invite who are already in Relationships.
+  const peopleFor = (p) => contactsOnInvite(p.event?.attendees || [], contacts, { selfEmail: userEmail, demoMode })
+    .slice(0, MAX_PEOPLE_PER_TASK)
+
   const createAccepted = () => {
-    const toCreate = proposals.filter(p => p.accepted).map(p => ({
-      title: p.taskTitle,
-      companyId: p.companyId || null,
-      projectId: p.projectId || null,
-      dueDate: p.dueDate || dateUtils.today(),
-      priority: 'medium',
-      notes: p.event?.title ? `Prep for calendar event: ${p.event.title}` : '',
-    }))
+    const toCreate = proposals.filter(p => p.accepted).map(p => {
+      const people = peopleFor(p)
+      return {
+        title: p.taskTitle,
+        companyId: p.companyId || null,
+        projectId: p.projectId || null,
+        dueDate: p.dueDate || dateUtils.today(),
+        priority: 'medium',
+        notes: [
+          p.event?.title ? `Prep for calendar event: ${p.event.title}` : '',
+          ...people.map(c => lastTimeLine(c, meetings, { demoMode })),
+        ].filter(Boolean).join('\n'),
+        resources: people.map(c => ({
+          id: genId('res'),
+          label: `${c.name || c.email} in Relationships`,
+          url: contactLink(c.id),
+        })),
+      }
+    })
     onCreateTasks(toCreate)
     setProposals([])
     setCreated(true)
@@ -145,6 +166,13 @@ export function PrepDay({ companies, projects, google, settings, onCreateTasks, 
                         <input value={p.taskTitle} onChange={e => editTitle(i, e.target.value)}
                           className="w-full bg-transparent text-sm font-medium text-navy-900 focus:outline-none border-b border-transparent focus:border-surface-300 pb-0.5" />
                         <p className="text-[11px] text-navy-400 mt-0.5">📅 {p.event?.title} · {p.reason}</p>
+                        {/* What the task's notes will say about the people on the invite */}
+                        {peopleFor(p).map(c => (
+                          <button key={c.id} type="button" onClick={() => onOpenContact?.(c.id)}
+                            className="block w-full text-left text-xs text-navy-700 bg-gold-50 border border-[#FBE3B4] rounded-lg px-2.5 py-1.5 mt-1.5 leading-relaxed hover:bg-[#FDF0D5]">
+                            {lastTimeLine(c, meetings, { demoMode })}
+                          </button>
+                        ))}
                         {/* Client + project selectors */}
                         <div className="flex flex-wrap gap-1.5 mt-2">
                           {companies.map(c => (
