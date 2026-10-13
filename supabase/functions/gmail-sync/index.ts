@@ -386,7 +386,7 @@ type Connection = {
   client_id: string | null; history_id: string | null; backfill_days: number
   sync_state: Record<string, any> | null; sync_started_at: string | null
 }
-type Contact = { id: string; email: string | null; name: string | null; last_contact_date: string | null }
+type Contact = { id: string; email: string | null; name: string | null; last_contact_date: string | null; other_emails?: string[] | null }
 
 type BackfillState = {
   startHistoryId: string
@@ -445,12 +445,18 @@ async function saveState(run: Run, fields: Record<string, unknown>) {
 // index refuses the insert and the existing row is used.
 async function findOrCreateContact(run: Run, email: string, name: string, threadId: string, at: number): Promise<Contact> {
   const { sb, conn } = run
+  // A person merged in the app keeps their extra addresses in other_emails.
   const lookup = async () => {
     const escaped = email.replace(/[\\%_]/g, (ch) => `\\${ch}`)
-    const { data, error } = await sb.from("contacts").select("id, email, name, last_contact_date")
+    const { data, error } = await sb.from("contacts").select("id, email, name, last_contact_date, other_emails")
       .eq("user_id", conn.user_id).ilike("email", escaped)
     if (error) throw new Error(`contact lookup failed: ${error.message}`)
-    return ((data ?? []) as Contact[]).find((c) => lower(c.email) === email) ?? null
+    const main = ((data ?? []) as Contact[]).find((c) => lower(c.email) === email)
+    if (main) return main
+    const { data: alt, error: altErr } = await sb.from("contacts").select("id, email, name, last_contact_date, other_emails")
+      .eq("user_id", conn.user_id).contains("other_emails", JSON.stringify([email])).limit(1)
+    if (altErr) throw new Error(`contact lookup failed: ${altErr.message}`)
+    return ((alt ?? []) as Contact[])[0] ?? null
   }
   const found = await lookup()
   if (found) return found
@@ -653,14 +659,22 @@ async function syncOne(sb: any, userId: string, deadline: number) {
   try {
     const accessToken = await accessTokenFor(conn)
     const [contactsRes, settingsRes] = await Promise.all([
-      sb.from("contacts").select("id, email, name, last_contact_date").eq("user_id", userId),
+      sb.from("contacts").select("id, email, name, last_contact_date, other_emails").eq("user_id", userId),
       sb.from("app_state").select("value").eq("user_id", userId).eq("key", "settings").maybeSingle(),
     ])
     if (contactsRes.error) throw new Error(`contacts read failed: ${contactsRes.error.message}`)
     const contactsByEmail = new Map<string, Contact>()
-    for (const c of (contactsRes.data ?? []) as Contact[]) {
+    // Main addresses first, so they win over someone's extra address.
+    const allContacts = (contactsRes.data ?? []) as Contact[]
+    for (const c of allContacts) {
       const e = lower(c.email)
       if (e && !contactsByEmail.has(e)) contactsByEmail.set(e, c)
+    }
+    for (const c of allContacts) {
+      for (const other of Array.isArray(c.other_emails) ? c.other_emails : []) {
+        const e = lower(other)
+        if (e && !contactsByEmail.has(e)) contactsByEmail.set(e, c)
+      }
     }
     const ignoreList = settingsRes.data?.value?.contactIgnore
     const run: Run = {

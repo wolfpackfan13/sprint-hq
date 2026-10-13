@@ -3,13 +3,19 @@ import { calUtils } from '../utils/dateUtils'
 import { supabase } from '../utils/supabase'
 
 const CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar.readonly'
+// Create, move and cancel events (Schedule it on a Relationships page).
+// Events only: calendars themselves and their sharing stay read-only.
+const EVENTS_SCOPE = 'https://www.googleapis.com/auth/calendar.events'
 const GMAIL_SCOPE = 'https://www.googleapis.com/auth/gmail.metadata'
 const SCOPES = [
   CALENDAR_SCOPE,
+  EVENTS_SCOPE,
   'https://www.googleapis.com/auth/drive.file',
   // Headers and labels only. Message bodies stay in Gmail.
   GMAIL_SCOPE,
 ].join(' ')
+
+const EVENTS_URL = 'https://www.googleapis.com/calendar/v3/calendars/primary/events'
 
 // How Google access works
 //
@@ -55,6 +61,25 @@ function mapEvent(ev) {
     description: ev.description || '',
     attendees: (ev.attendees || []).map(a => a.email),
     htmlLink: ev.htmlLink,
+    // Relationships: skip standing meetings and ones you declined.
+    recurring: !!ev.recurringEventId,
+    selfStatus: (ev.attendees || []).find(a => a.self)?.responseStatus || null,
+    meetLink: ev.hangoutLink || '',
+    // Only events you organize can be moved from SprintHQ.
+    organizerSelf: !!ev.organizer?.self,
+  }
+}
+
+// An event body for Google from the Schedule sheet's choices.
+function eventBody({ title, description, start, end, attendees = [], meet = false }) {
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone
+  return {
+    summary: title,
+    description: description || '',
+    start: { dateTime: start, timeZone },
+    end: { dateTime: end, timeZone },
+    attendees: attendees.map(email => ({ email })),
+    ...(meet ? { conferenceData: { createRequest: { requestId: `shq-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, conferenceSolutionKey: { type: 'hangoutsMeet' } } } } : {}),
   }
 }
 
@@ -126,6 +151,8 @@ export function useGoogle(settings, { saveSettings, saveGoogleToken, expireGoogl
   const [authError, setAuthError] = useState(null)
   const [signingIn, setSigningIn] = useState(false)
   const [calendarScopeMissing, setCalendarScopeMissing] = useState(false)
+  // Set when Google refuses an event write for lack of permission.
+  const [writeRefused, setWriteRefused] = useState(false)
   const [server, setServer] = useState({ checked: false, available: false, connected: false })
   const [syncing, setSyncing] = useState(false)
   const [syncResult, setSyncResult] = useState(null)
@@ -430,12 +457,15 @@ export function useGoogle(settings, { saveSettings, saveGoogleToken, expireGoogl
     throw new NeedsRenewal()
   }, [getServerToken, expireGoogleToken])
 
-  const authFetch = useCallback(async (url) => {
+  const authFetch = useCallback(async (url, init = {}) => {
     let token = await currentToken()
     for (let attempt = 0; ; attempt++) {
       let resp
       try {
-        resp = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+        resp = await fetch(url, {
+          ...init,
+          headers: { ...(init.body ? { 'Content-Type': 'application/json' } : {}), ...(init.headers || {}), Authorization: `Bearer ${token}` },
+        })
       } catch {
         throw new Error('Could not reach Google. Check your connection and refresh.')
       }
@@ -489,6 +519,85 @@ export function useGoogle(settings, { saveSettings, saveGoogleToken, expireGoogl
       `https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${encodeURIComponent(now)}&timeMax=${encodeURIComponent(end)}&singleEvents=true&orderBy=startTime&maxResults=50`
     )
   }, [loadEvents])
+
+  // ── Relationships: events without touching the Calendar page ──
+  // Reads a window of events for next touches and To log. Leaves
+  // calendarEvents (what the Calendar page shows) alone. Returns null when
+  // Google isn't linked or the events couldn't be read. A list cut off at
+  // the page limit has truncated = true, so callers don't read a missing
+  // event as a cancelled one.
+  const listEvents = useCallback(async (timeMinIso, timeMaxIso) => {
+    if (!settingsRef.current.googleConnected && !serverRef.current.connected) return null
+    const out = []
+    let pageToken = ''
+    try {
+      for (let page = 0; page < 8; page++) {
+        const data = await authFetch(
+          `${EVENTS_URL}?timeMin=${encodeURIComponent(timeMinIso)}&timeMax=${encodeURIComponent(timeMaxIso)}&singleEvents=true&orderBy=startTime&maxResults=250${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ''}`
+        )
+        out.push(...(data.items || []).filter(ev => ev.status !== 'cancelled').map(mapEvent))
+        pageToken = data.nextPageToken || ''
+        if (!pageToken) break
+      }
+      if (pageToken) out.truncated = true
+      return out
+    } catch {
+      return null
+    }
+  }, [authFetch])
+
+  // Writes go through here so a missing permission shows the Allow prompt
+  // instead of a raw error. Returns { ok, event?, error?, needsPermission? }.
+  const writeEvent = useCallback(async (url, init) => {
+    try {
+      const body = await authFetch(url, init)
+      setWriteRefused(false)
+      return { ok: true, event: body && body.id ? mapEvent(body) : null }
+    } catch (err) {
+      if (err.needsRenewal) return { ok: false, error: 'Google sign-in needs a refresh. Tap Refresh Google on the Calendar page, then try again.' }
+      if (/not your calendar/i.test(err.message)) {
+        // describeApiError read this as no calendar access at all, but
+        // reading works; only writing is missing.
+        setCalendarScopeMissing(false)
+        setWriteRefused(true)
+        return { ok: false, needsPermission: true, error: 'SprintHQ can read your calendar but not add to it yet. Tap Allow, and tick the box for calendar events.' }
+      }
+      return { ok: false, error: err.message }
+    }
+  }, [authFetch])
+
+  // sendUpdates=all: guests get the invite (or the change, or the cancel).
+  const createEvent = useCallback((details) => writeEvent(
+    `${EVENTS_URL}?sendUpdates=all${details.meet ? '&conferenceDataVersion=1' : ''}`,
+    { method: 'POST', body: JSON.stringify(eventBody(details)) },
+  ), [writeEvent])
+
+  // A move changes the time (and the title, when given) and nothing else:
+  // guests, description and the Meet link stay as they are. PATCH replaces
+  // whole fields, so the rest is left out of the body on purpose.
+  const moveEvent = useCallback((eventId, { start, end, title }) => {
+    const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone
+    return writeEvent(
+      `${EVENTS_URL}/${encodeURIComponent(eventId)}?sendUpdates=all`,
+      { method: 'PATCH', body: JSON.stringify({ start: { dateTime: start, timeZone }, end: { dateTime: end, timeZone }, ...(title ? { summary: title } : {}) }) },
+    )
+  }, [writeEvent])
+
+  const cancelEvent = useCallback((eventId) => writeEvent(
+    `${EVENTS_URL}/${encodeURIComponent(eventId)}?sendUpdates=all`,
+    { method: 'DELETE' },
+  ), [writeEvent])
+
+  // Server mode keeps a record of what Google allowed; one-hour mode only
+  // learns when a write is refused.
+  const calendarWriteMissing = writeRefused ||
+    (server.connected && !server.reauth && Array.isArray(server.scopes) && server.scopes.length > 0 && !server.scopes.includes(EVENTS_SCOPE))
+
+  // Asks Google for the event permission. Call straight from a click.
+  const allowCalendarWrites = useCallback(() => {
+    if (serverRef.current.available) requestCode()
+    else requestToken({ fresh: true })
+  }, [requestCode, requestToken])
 
   const backupToDrive = useCallback(async (data) => {
     if (!settingsRef.current.googleConnected && !serverRef.current.connected) return { success: false, error: 'Not connected' }
@@ -575,6 +684,12 @@ export function useGoogle(settings, { saveSettings, saveGoogleToken, expireGoogl
     calendarError,
     fetchCalendarEvents,
     fetchCalendarRange,
+    listEvents,
+    createEvent,
+    moveEvent,
+    cancelEvent,
+    calendarWriteMissing,
+    allowCalendarWrites,
     backupToDrive,
     fetchRecentEmails,
   }

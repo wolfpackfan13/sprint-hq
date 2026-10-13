@@ -7,7 +7,7 @@ export function DoView({
   todayTasks, top3Tasks, missedTasks, unscheduledTasks = [], companies, projects,
   onAdd, onComplete, onUncomplete, onEdit, onDelete, onReschedule,
   completedToday, timer, onToggleTimer, onToggleSubtask, onBreakdown, onToggleTop3,
-  reachOutSlot = null,
+  reachOutSlot = null, toLogSlot = null,
 }) {
   const [quickTitle, setQuickTitle] = useState('')
   const [showMissed, setShowMissed] = useState(true)
@@ -57,6 +57,9 @@ export function DoView({
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-5 max-w-2xl mx-auto w-full">
+        {/* Relationships: meetings that still need notes come first */}
+        {toLogSlot}
+
         {/* MISSED triage banner */}
         {missedTodo.length > 0 && (
           <div className="card border-red-200 bg-red-50 overflow-hidden">

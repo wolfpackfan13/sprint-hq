@@ -1,13 +1,13 @@
 import { useState } from 'react'
 import { Sheet, StageChip } from './bits'
-import { STAGES, stageOf, segmentOf, defaultNextTouch, shortDay } from '../../utils/relationships'
-import { dateUtils } from '../../utils/dateUtils'
+import { STAGES, stageOf, segmentOf, isPartner, firstNameOf } from '../../utils/relationships'
+import { dateUtils, calUtils } from '../../utils/dateUtils'
 import { COLOR_OPTIONS } from '../ClientForm'
 
 // Convert a lead to a client: create or pick the Client/Area record that
 // hours, tasks, and invoices hang off, then move the stage.
 export function ConvertSheet({ contact, contacts, companies, onConvert, onClose }) {
-  const today = dateUtils.today()
+  const today = calUtils.localToday()
   const firstName = (contact.name || '').trim().split(' ')[0] || 'them'
   const companyName = (contact.company || '').trim()
   const existingMatch = companyName
@@ -29,7 +29,11 @@ export function ConvertSheet({ contact, contacts, companies, onConvert, onClose 
   const [peerIds, setPeerIds] = useState(peers.map(p => p.id))
   const togglePeer = (id) => setPeerIds(ids => ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id])
 
-  const nextTouch = defaultNextTouch('client', today)
+  // A referral partner sent them: note what you owe now, or later from the
+  // partner's page.
+  const partner = contacts.find(c => c.id === contact.referredBy && isPartner(c))
+  const [reward, setReward] = useState(contact.rewardAmount != null ? String(contact.rewardAmount) : '')
+
   const canSave = mode === 'new' ? !!name.trim() : !!existingId
 
   const save = () => {
@@ -40,7 +44,7 @@ export function ConvertSheet({ contact, contacts, companies, onConvert, onClose 
         : null,
       companyId: mode === 'existing' ? existingId : null,
       peerIds,
-      nextTouchOn: nextTouch,
+      rewardAmount: partner && Number(reward) > 0 ? Number(reward) : null,
     })
   }
 
@@ -119,8 +123,17 @@ export function ConvertSheet({ contact, contacts, companies, onConvert, onClose 
               <span className="flex items-center gap-1.5"><StageChip stage={stageOf(contact)} /> → <StageChip stage="client" /></span>
             </div>
             <div className="flex justify-between px-3 py-2.5"><span className="text-navy-600">Client since</span><span className="font-medium">Today, {dateUtils.format(today, 'short')}</span></div>
-            <div className="flex justify-between px-3 py-2.5"><span className="text-navy-600">Next touch</span><span className="font-medium">{shortDay(nextTouch)} · First check-in</span></div>
+            <div className="flex justify-between px-3 py-2.5"><span className="text-navy-600">Next step</span><span className="font-medium">Book a first check-in</span></div>
           </div>
+          {partner && (
+            <div className="rounded-xl border border-[#E6DEFB] bg-[#F7F5FE] px-3 py-2.5 space-y-1.5">
+              <label htmlFor="cv-reward" className="block text-xs font-semibold text-[#5B21B6]">Reward for {partner.name}</label>
+              {partner.referralTerms && <p className="text-xs text-navy-700">Terms: {partner.referralTerms}</p>}
+              <input id="cv-reward" type="number" min="0" inputMode="decimal" value={reward} onChange={e => setReward(e.target.value)}
+                placeholder="Amount owed, $ (or set it later)" className="w-full input-base px-3 py-2 text-sm bg-white" />
+              <p className="text-xs text-navy-600">{firstNameOf(partner)}'s next step becomes sending it.</p>
+            </div>
+          )}
           {peers.map(p => (
             <label key={p.id} className="flex items-center gap-2.5 text-sm text-navy-800 py-1.5">
               <input type="checkbox" checked={peerIds.includes(p.id)} onChange={() => togglePeer(p.id)} className="w-4 h-4 accent-[#A86800]" />

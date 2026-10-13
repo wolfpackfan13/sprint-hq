@@ -101,7 +101,9 @@ const COMPANY_HINTS: Record<string, string> = {
 }
 
 const STAGES = ["nurturing", "in_conversation", "proposal_out", "client", "past_client", "network"] as const
-const NETWORK_LABELS = ["referral_partner", "collaborator", "personal"] as const
+// Referral partner is its own track in the app (contacts.referral_stage),
+// set by Sam, so the call only sorts network people into these two.
+const NETWORK_LABELS = ["collaborator", "personal"] as const
 const STAGE_LABELS: Record<string, string> = {
   nurturing: "Nurturing", in_conversation: "In conversation", proposal_out: "Proposal out",
   client: "Client", past_client: "Past client", network: "Network", needs_review: "Needs review",
@@ -150,8 +152,8 @@ For each person in the NEW PEOPLE section (and only those), suggest where they s
 - "proposal_out": a scope or price is in their hands
 - "client": paying Sam now, or on the team of a client he serves
 - "past_client": an engagement that has ended
-- "network": a referral partner, collaborator, teammate, vendor, or personal contact
-For "network", also give network_label: "referral_partner" | "collaborator" | "personal" | null.
+- "network": a referral source, collaborator, teammate, vendor, or personal contact
+For "network", also give network_label: "collaborator" | "personal" | null.
 company: their business name if the call or a non-personal email domain makes it clear, otherwise "".
 If the NEW PEOPLE section says none, return an empty array.
 
@@ -324,8 +326,13 @@ type ContactRow = {
   id: string; name: string | null; email: string | null; company: string | null
   company_id: string | null; stage: string | null; network_label: string | null
   notes: string | null; next_touch_on: string | null; next_touch_reason: string | null
+  other_emails: unknown; referral_stage: string | null
 }
-const CONTACT_COLUMNS = "id, name, email, company, company_id, stage, network_label, notes, next_touch_on, next_touch_reason"
+const CONTACT_COLUMNS = "id, name, email, company, company_id, stage, network_label, notes, next_touch_on, next_touch_reason, other_emails, referral_stage"
+
+// Every address a person goes by, main one first. Merging two records in
+// the app keeps the second address in other_emails.
+const emailsOf = (c: ContactRow) => [...new Set([lower(c.email), ...arr(c.other_emails).map((e) => lower(e))].filter(Boolean))]
 
 type MeetingRow = {
   id: string; external_id: string | null; title: string | null; date: string | null
@@ -336,15 +343,18 @@ type MeetingRow = {
 // in contact_ids, or (older meetings) the attendee text has their email.
 function meetingHasContact(m: MeetingRow, c: ContactRow) {
   if (arr(m.contact_ids).includes(c.id)) return true
-  const email = lower(c.email)
-  if (!email || !m.attendees) return false
-  return m.attendees.toLowerCase().split(/[\s,;<>()"]+/).includes(email)
+  const emails = emailsOf(c)
+  if (!emails.length || !m.attendees) return false
+  const words = m.attendees.toLowerCase().split(/[\s,;<>()"]+/)
+  return emails.some((e) => words.includes(e))
 }
 
 function matchAttendees(attendees: Attendee[], contacts: ContactRow[], ignore: Set<string>) {
   const self = new Set(SELF_ADDRESSES)
   const byEmail = new Map<string, ContactRow>()
+  // Main addresses first, so they win over someone's extra address.
   contacts.forEach((c) => { const e = lower(c.email); if (e && !byEmail.has(e)) byEmail.set(e, c) })
+  contacts.forEach((c) => emailsOf(c).forEach((e) => { if (!byEmail.has(e)) byEmail.set(e, c) }))
 
   const matched: ContactRow[] = []
   const matchedEmail = new Map<string, string>()   // attendee email -> contact id
@@ -370,6 +380,7 @@ function matchAttendees(attendees: Attendee[], contacts: ContactRow[], ignore: S
 function contextFor(c: ContactRow, meetings: MeetingRow[], currentLinkId: string) {
   const lines = [
     `- ${c.name || "(no name)"} <${c.email || "no email"}> · stage: ${STAGE_LABELS[c.stage ?? ""] ?? c.stage ?? "unknown"}`
+      + (c.referral_stage === "partner" ? " · referral partner" : c.referral_stage === "invited" ? " · invited to be a referral partner" : "")
       + (c.company ? ` · company: ${c.company}` : "")
       + (c.next_touch_on ? ` · next touch ${c.next_touch_on}${c.next_touch_reason ? ` (${clip(c.next_touch_reason, 80)})` : ""}` : ""),
   ]
@@ -399,7 +410,12 @@ async function findOrCreateContact(sb: any, userId: string, row: Record<string, 
     const { data, error } = await sb.from("contacts").select(CONTACT_COLUMNS)
       .eq("user_id", userId).ilike("email", escaped)
     if (error) throw new Error(`contact lookup failed: ${error.message}`)
-    return (data ?? []).find((c: ContactRow) => lower(c.email) === email) ?? null
+    const main = (data ?? []).find((c: ContactRow) => lower(c.email) === email)
+    if (main) return main
+    const { data: alt, error: altErr } = await sb.from("contacts").select(CONTACT_COLUMNS)
+      .eq("user_id", userId).contains("other_emails", JSON.stringify([email])).limit(1)
+    if (altErr) throw new Error(`contact lookup failed: ${altErr.message}`)
+    return (alt ?? [])[0] ?? null
   }
   const found = await lookup()
   if (found) return { contact: found as ContactRow, created: false }
@@ -810,8 +826,9 @@ serve(async (req: Request) => {
       crm.meeting = saved.created ? "created" : "updated"
       crm.meeting_id = saved.id
 
-      // 3. Next touch from the call. A next touch already set for a later
-      // date is Sam's call and stays as it is.
+      // 3. Next touch from the call, saved as a suggested follow-up. One
+      // already set for a later date is Sam's call and stays as it is, and
+      // so does anything booked on the calendar (next_touch_event_id).
       for (const f of followUps) {
         const id = contactIdByEmail.get(f.email)
         if (!id) continue
@@ -820,7 +837,7 @@ serve(async (req: Request) => {
         // not exist" when the filter column is not in select().
         const { count, error } = await sb.from("contacts")
           .update({ next_touch_on: f.date, next_touch_reason: `From call: ${f.reason || mtg.title}`, updated_at: nowIso() }, { count: "exact" })
-          .eq("user_id", userId).eq("id", id)
+          .eq("user_id", userId).eq("id", id).is("next_touch_event_id", null)
           .or(`next_touch_on.is.null,next_touch_on.lte.${today}`)
         if (error) throw new Error(`next touch update failed: ${error.message}`)
         crm.next_touches_set += count ?? 0
