@@ -13,6 +13,9 @@ export function useContacts() {
     return updated
   }
 
+  // Adopt a list just pulled from the cloud (already in localStorage).
+  const replaceAll = useCallback((list) => setContacts(Array.isArray(list) ? list : []), [])
+
   const addContact = useCallback((data) => {
     const contact = {
       id: genId(),
@@ -70,5 +73,5 @@ export function useContacts() {
   const filterByCompany = (companyId) =>
     companyId ? contacts.filter(c => c.companyId === companyId) : contacts
 
-  return { contacts, addContact, updateContact, updateContacts, deleteContact, touchContact, completeTouch, filterByCompany }
+  return { contacts, addContact, updateContact, updateContacts, deleteContact, touchContact, completeTouch, filterByCompany, replaceAll }
 }

@@ -118,15 +118,19 @@ function EventDetail({ event, companies, projects, onClose, onCreateTask, meetin
 // keeps browsers from blocking it.
 export function GoogleStatus({ google, onRetry }) {
   if (google.needsRenewal || google.calendarScopeMissing) {
-    const reconnect = google.calendarScopeMissing
+    const reconnect = google.calendarScopeMissing || google.reconnectNeeded
     return (
       <div className="card p-3 mb-3 flex items-center justify-between gap-3 border border-[#FBE3B4] bg-gold-50">
         <div className="min-w-0">
-          <p className="text-sm font-semibold text-navy-900">{reconnect ? 'Calendar access is off' : 'Google needs a quick refresh'}</p>
+          <p className="text-sm font-semibold text-navy-900">
+            {google.reconnectNeeded ? 'Reconnect Google' : reconnect ? 'Calendar access is off' : 'Google needs a quick refresh'}
+          </p>
           <p className="text-xs text-navy-600">
-            {google.authError || (reconnect
-              ? 'Reconnect and tick the box for Google Calendar.'
-              : 'Google sign-ins last an hour. One tap renews it, no consent screen.')}
+            {google.authError || (google.reconnectNeeded
+              ? 'Google withdrew SprintHQ\'s access. One reconnect fixes calendar and email sync.'
+              : reconnect
+                ? 'Reconnect and tick the box for Google Calendar.'
+                : 'Google sign-ins last an hour. One tap renews it, no consent screen.')}
           </p>
         </div>
         <button onClick={google.renew} disabled={google.signingIn}

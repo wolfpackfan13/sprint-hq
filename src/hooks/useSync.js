@@ -4,7 +4,7 @@ import { storage } from '../utils/storage'
 import { TABLE_STORAGE_KEY, SINGLETON_KEYS } from '../utils/dataMap'
 import {
   pullAllFromCloud, migrateBlobToTables,
-  syncTableChange, syncSingleton, purgeRemoteDeviceLocal,
+  syncTableChange, syncSingleton, purgeRemoteDeviceLocal, pullTables,
 } from '../utils/dataEngine'
 
 const LIST_KEYS = Object.values(TABLE_STORAGE_KEY)
@@ -18,6 +18,7 @@ export function useSync() {
   const pullingRef = useRef(false)
   const queueRef = useRef([])
   const flushTimer = useRef(null)
+  const flushingRef = useRef(false)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -71,6 +72,7 @@ export function useSync() {
     if (!session?.user || queueRef.current.length === 0) return
     const batch = queueRef.current
     queueRef.current = []
+    flushingRef.current = true
     setSyncStatus('syncing')
     try {
       for (const change of batch) {
@@ -87,6 +89,8 @@ export function useSync() {
       console.error('Sync push failed:', err.message)
       setSyncStatus(navigator.onLine ? 'error' : 'offline')
       queueRef.current = [...batch, ...queueRef.current]
+    } finally {
+      flushingRef.current = false
     }
   }, [session])
 
@@ -99,7 +103,7 @@ export function useSync() {
       queueRef.current.push(e.detail)
       setSyncStatus('syncing')
       if (flushTimer.current) clearTimeout(flushTimer.current)
-      flushTimer.current = setTimeout(flush, 1200)
+      flushTimer.current = setTimeout(() => { flushTimer.current = null; flush() }, 1200)
     }
     window.addEventListener('sprintHQ:changed', onChange)
     return () => window.removeEventListener('sprintHQ:changed', onChange)
@@ -111,6 +115,21 @@ export function useSync() {
     return () => window.removeEventListener('online', onOnline)
   }, [session, initialLoadDone, flush])
 
+  // Re-read tables the server changed. Skipped while local changes are still
+  // waiting to go up, so a pull never overwrites an edit that hasn't synced.
+  const refreshFromCloud = useCallback(async (tables) => {
+    if (!session?.user || !initialLoadDone || pullingRef.current) return null
+    if (queueRef.current.length > 0 || flushTimer.current || flushingRef.current) return null
+    try {
+      const out = await pullTables(session.user.id, tables)
+      setLastSynced(new Date())
+      return out
+    } catch (err) {
+      console.warn('Refresh failed:', err.message)
+      return null
+    }
+  }, [session, initialLoadDone])
+
   return {
     session,
     authLoading,
@@ -120,5 +139,6 @@ export function useSync() {
     syncStatus, lastSynced, initialLoadDone,
     queueSync: () => {},
     pushToCloud: flush,
+    refreshFromCloud,
   }
 }
