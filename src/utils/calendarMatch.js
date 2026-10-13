@@ -32,7 +32,7 @@ For each event that is a real MEETING or commitment that would benefit from prep
 For each prep-worthy event, match it to the most likely client (companyId) and project (projectId) based on the title, attendees, and your knowledge of their business. If you can't confidently match a project, leave projectId null. If you can't match a client, leave companyId null.
 
 Respond with ONLY a JSON array, no markdown, no preamble. Each item:
-{"eventIndex": <number>, "taskTitle": "Prep for X / Review Y", "companyId": "<id or null>", "projectId": "<id or null>", "reason": "<3-6 word why>"}
+{"eventIndex": <number>, "taskTitle": "Prep for X / Review Y", "companyId": "<id or null>", "projectId": "<id or null>"}
 
 Only include prep-worthy events. If none qualify, return [].`
 
