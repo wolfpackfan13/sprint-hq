@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { useTasks } from './hooks/useTasks'
 import { useSprint } from './hooks/useSprint'
 import { useNotes } from './hooks/useNotes'
@@ -8,6 +8,7 @@ import { useMeetings } from './hooks/useMeetings'
 import { useGoals } from './hooks/useGoals'
 import { useSettings } from './hooks/useSettings'
 import { useGoogle } from './hooks/useGoogle'
+import { useRelationshipEvents } from './hooks/useRelationshipEvents'
 import { useProjects } from './hooks/useProjects'
 import { useInvoices } from './hooks/useInvoices'
 import { useTimer } from './hooks/useTimer'
@@ -49,8 +50,13 @@ import { SyncIndicator } from './components/SyncIndicator'
 import { SearchOverlay } from './components/SearchOverlay'
 import { GlobalTimer } from './components/GlobalTimer'
 import { genId as makeId } from './utils/ids'
-import { ReachOutCard } from './components/relationships/ReachOutCard'
-import { dueTouches, contactIdsFromAttendees, hiddenInDemo, contactIdFromLink } from './utils/relationships'
+import { ReachOutCard, ToLogCard } from './components/relationships/ReachOutCard'
+import {
+  contactIdsFromAttendees, hiddenInDemo, contactIdFromLink, nextBookedEvent, toLogItems, reachOutList,
+  meetingsForContact, threadsForContact, lastContactDate, mergePatch, firstNameOf, localDateOf, shortDay, stageOf,
+  referralStageOf, lower,
+} from './utils/relationships'
+import { calUtils } from './utils/dateUtils'
 
 function AppMain({ sync }) {
   const [activeView, setActiveView] = useState('do')
@@ -66,6 +72,7 @@ function AppMain({ sync }) {
   const [detailProject, setDetailProject] = useState(null)
   const [searchOpen, setSearchOpen] = useState(false)
   const [focusContactId, setFocusContactId] = useState(null)
+  const [focusAction, setFocusAction] = useState(null)   // { type: 'log', prefill } | { type: 'schedule' }
 
   const {
     tasks, todayTasks, allThisWeekTasks, missedTasks, top3Tasks, unscheduledTasks, completedToday,
@@ -77,21 +84,27 @@ function AppMain({ sync }) {
   const { sprint, saveSprint, updateWeekGoal, updateSprintGoal, resetSprint, currentWeek, progress } = useSprint()
   const { notes, addNote, deleteNote, togglePin } = useNotes()
   const { companies, addCompany, updateCompany, deleteCompany } = useCompanies()
-  const { contacts, addContact, updateContact, updateContacts, deleteContact, completeTouch, replaceAll: replaceContacts } = useContacts()
+  const { contacts, addContact, updateContact, updateContacts, deleteContact, replaceAll: replaceContacts } = useContacts()
   // Written by the hourly Gmail sync; the app only reads them.
   const [emailThreads, setEmailThreads] = useState(() => storage.get('emailThreads', []))
-  const { meetings, addMeeting, updateMeeting, deleteMeeting, toggleActionItem, addActionItem } = useMeetings()
+  const { meetings, addMeeting, updateMeeting, deleteMeeting, toggleActionItem, addActionItem, replaceAll: replaceMeetings } = useMeetings()
   const { goals, vision, activeGoals, addGoal, updateGoal, deleteGoal, saveVision } = useGoals()
   const { settings, saveSettings, saveGoogleToken, expireGoogleToken, clearGoogleToken } = useSettings()
-  // After a Gmail sync: re-read contacts (new people, last contact dates) and
-  // email threads. Skipped while local edits are still waiting to sync.
+  // After a Gmail sync, and before the app writes contacts on its own: re-read
+  // contacts (new people, last contact dates), email threads, and meetings
+  // (Circleback notes the processor saved). Skipped while local edits are
+  // still waiting to sync.
   const refreshFromCloud = sync.refreshFromCloud
+  const lastPullRef = useRef(Date.now())   // the first load is a pull
   const refreshPeople = useCallback(async () => {
-    const fresh = await refreshFromCloud(['contacts', 'email_threads'])
-    if (!fresh) return
+    const fresh = await refreshFromCloud(['contacts', 'email_threads', 'meetings'])
+    if (!fresh) return false
+    lastPullRef.current = Date.now()
     if (fresh.contacts) replaceContacts(fresh.contacts)
     if (fresh.emailThreads) setEmailThreads(fresh.emailThreads)
-  }, [refreshFromCloud, replaceContacts])
+    if (fresh.meetings) replaceMeetings(fresh.meetings)
+    return true
+  }, [refreshFromCloud, replaceContacts, replaceMeetings])
   const google = useGoogle(settings, { saveSettings, saveGoogleToken, expireGoogleToken, clearGoogleToken, onEmailSynced: refreshPeople })
 
   // The hourly sync runs while SprintHQ is closed. Coming back to the app
@@ -244,10 +257,13 @@ function AppMain({ sync }) {
 
   // ── Relationships ──
   const demoMode = !!settings.demoMode
-  const openContact = useCallback((id) => { setFocusContactId(id); setActiveView('relationships') }, [])
-  // #contact=<id> (the links Prep My Day puts on prep tasks) opens that
-  // contact, on load or when clicked from inside the app. The hash is
-  // cleared afterwards so a refresh doesn't jump back to it.
+  const openContact = useCallback((id, action = null) => {
+    setFocusContactId(id); setFocusAction(action); setActiveView('relationships')
+  }, [])
+  // #contact=<id> (the links Prep My Day puts on prep tasks, and the link in
+  // events SprintHQ adds) opens that contact, on load or when clicked from
+  // inside the app. The hash is cleared afterwards so a refresh doesn't
+  // jump back to it.
   useEffect(() => {
     const fromHash = () => {
       const id = contactIdFromLink(window.location.href)
@@ -259,13 +275,188 @@ function AppMain({ sync }) {
     window.addEventListener('hashchange', fromHash)
     return () => window.removeEventListener('hashchange', fromHash)
   }, [openContact])
-  const ignoreEmail = useCallback((email) => {
+
+  // Deleted from review: ignored from then on, so syncs don't add them back.
+  const ignoreEmails = useCallback((emails) => {
     const list = settings.contactIgnore || []
-    const e = (email || '').trim().toLowerCase()
-    if (e && !list.includes(e)) saveSettings({ contactIgnore: [...list, e] })
+    const add = [...new Set((emails || []).map(lower).filter(e => e && !list.includes(e)))]
+    if (add.length) saveSettings({ contactIgnore: [...list, ...add] })
   }, [settings.contactIgnore, saveSettings])
-  const snoozeTouch = useCallback((id, patch) => updateContact(id, patch), [updateContact])
-  const dueContacts = dueTouches(filterByClient(contacts).filter(c => !hiddenInDemo(c, demoMode)))
+
+  const notSame = settings.mergeNotSame || []
+  const addNotSame = useCallback((key) => {
+    const list = settings.mergeNotSame || []
+    if (!list.includes(key)) saveSettings({ mergeNotSame: [...list, key] })
+  }, [settings.mergeNotSame, saveSettings])
+
+  const contactsById = useMemo(() => Object.fromEntries(contacts.map(c => [c.id, c])), [contacts])
+
+  // The calendar, two weeks back and three months ahead: what's booked with
+  // each person, and meetings that still need notes.
+  const relEvents = useRelationshipEvents(google)
+  const calendarEvents = relEvents.events
+
+  // The next event with each person. Until the calendar has been read, the
+  // copy saved on the contact stands in.
+  const bookedById = useMemo(() => {
+    const map = {}
+    if (calendarEvents) {
+      contacts.forEach(c => {
+        if (stageOf(c) === 'needs_review') return
+        const ev = nextBookedEvent(c, calendarEvents)
+        if (ev) map[c.id] = ev
+      })
+    } else {
+      const today = calUtils.localToday()
+      contacts.forEach(c => {
+        if (c.nextTouchEventId && c.nextTouchOn && c.nextTouchOn >= today) {
+          map[c.id] = { id: c.nextTouchEventId, title: c.nextTouchReason || 'Next touch', start: c.nextTouchOn, end: c.nextTouchOn, cached: true }
+        }
+      })
+    }
+    return map
+  }, [contacts, calendarEvents])
+
+  // Keep the saved copy in step with the calendar, so lists sort by it on
+  // other devices and before the calendar loads. Events beyond the window
+  // the app reads are left alone.
+  useEffect(() => {
+    if (!calendarEvents) return
+    const horizon = calUtils.addDays(calUtils.localToday(), 85)
+    const patches = []
+    contacts.forEach(c => {
+      if (stageOf(c) === 'needs_review') return
+      const ev = nextBookedEvent(c, calendarEvents)
+      if (ev) {
+        const on = localDateOf(ev.start)
+        const reason = ev.title || ''
+        if (c.nextTouchEventId !== ev.id || c.nextTouchOn !== on || (c.nextTouchReason || '') !== reason) {
+          patches.push({ id: c.id, nextTouchEventId: ev.id, nextTouchOn: on, nextTouchReason: reason })
+        }
+      } else if (relEvents.complete && c.nextTouchEventId && !(c.nextTouchOn && c.nextTouchOn > horizon)) {
+        patches.push({ id: c.id, nextTouchEventId: null, nextTouchOn: '', nextTouchReason: '' })
+      }
+    })
+    if (!patches.length) return
+    // Writing a contact sends the whole row, so pull first if it's been a
+    // while; this runs again with the fresh copy.
+    if (Date.now() - lastPullRef.current > 10 * 60 * 1000) { refreshPeople(); return }
+    updateContacts(patches)
+  }, [calendarEvents, relEvents.complete, contacts, updateContacts, refreshPeople])
+
+  // Meetings with a lead, client or partner that have no notes yet.
+  const toLogDismissed = settings.toLogDismissed || []
+  const toLog = useMemo(() => {
+    if (!calendarEvents) return []
+    const people = contacts.filter(c => !hiddenInDemo(c, demoMode))
+    return toLogItems(calendarEvents, people, meetings, { dismissed: toLogDismissed })
+  }, [calendarEvents, contacts, meetings, toLogDismissed, demoMode])
+  const toLogByContact = useMemo(() => {
+    const map = {}
+    toLog.forEach(item => item.contactIds.forEach(id => { (map[id] = map[id] || []).push(item) }))
+    return map
+  }, [toLog])
+  const dismissToLog = useCallback((eventId) => {
+    const list = settings.toLogDismissed || []
+    if (!list.includes(eventId)) saveSettings({ toLogDismissed: [...list, eventId].slice(-300) })
+  }, [settings.toLogDismissed, saveSettings])
+  const logPrefill = (item) => ({ date: item.day, title: item.title, calendarEventId: item.eventId, contactIds: item.contactIds })
+
+  // A heads-up the first time this device sees a meeting with no notes.
+  const toLogKey = toLog.map(i => i.eventId).join(',')
+  useEffect(() => {
+    if (!toLog.length) return
+    let seen = []
+    try { seen = JSON.parse(window.localStorage.getItem('toLogNotified') || '[]') } catch { /* ignore */ }
+    const fresh = toLog.filter(i => !seen.includes(i.eventId))
+    if (!fresh.length) return
+    try { window.localStorage.setItem('toLogNotified', JSON.stringify([...seen, ...fresh.map(i => i.eventId)].slice(-300))) } catch { /* ignore */ }
+    const item = fresh[0]
+    const lead = contactsById[item.contactIds[0]]
+    if (!lead) return
+    setToast(fresh.length === 1
+      ? { message: `No notes yet from ${item.title || 'your meeting'} with ${firstNameOf(lead)}`, actionLabel: 'Log', duration: 9000,
+          undo: () => openContact(lead.id, { type: 'log', prefill: logPrefill(item) }) }
+      : { message: `${fresh.length} meetings have no notes yet`, actionLabel: 'View', duration: 9000, undo: () => setActiveView('do') })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [toLogKey])
+
+  // Today: people with nothing booked who are past the gap their stage
+  // allows. Past clients only show when they're on the referral track.
+  const reachOut = useMemo(() => {
+    const list = filterByClient(contacts)
+      .filter(c => !hiddenInDemo(c, demoMode))
+      .filter(c => stageOf(c) !== 'past_client' || referralStageOf(c))
+    const lastDates = {}
+    list.forEach(c => {
+      // A meeting still waiting for notes counts as contact; it's in To log.
+      const met = (toLogByContact[c.id] || []).map(i => i.day).sort().pop() || ''
+      const last = lastContactDate(c, meetingsForContact(c, meetings), threadsForContact(c, emailThreads)) || ''
+      lastDates[c.id] = met > last ? met : last
+    })
+    return reachOutList(list, { lastDates, bookedIds: new Set(Object.keys(bookedById)) })
+  }, [contacts, filterByClient, demoMode, meetings, emailThreads, bookedById, toLogByContact])
+
+  // After Schedule it: show the event right away and save it on the contact.
+  const handleScheduled = useCallback((contact, { event, rescheduled, invited }) => {
+    if (!event) return
+    relEvents.addLocal(event)
+    const before = { nextTouchEventId: contact.nextTouchEventId || null, nextTouchOn: contact.nextTouchOn || '', nextTouchReason: contact.nextTouchReason || '' }
+    updateContact(contact.id, { nextTouchEventId: event.id, nextTouchOn: localDateOf(event.start), nextTouchReason: event.title || '' })
+    const time = (event.start || '').includes('T') ? ` at ${new Date(event.start).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : ''
+    const when = `${shortDay(localDateOf(event.start))}${time}`
+    if (rescheduled) {
+      setToast({ message: `Moved to ${when}${invited ? '. Guests get the new time.' : ''}`, duration: 5000 })
+      return
+    }
+    setToast({
+      message: `On your calendar for ${when}${invited ? `. ${firstNameOf(contact)} is invited.` : ''}`,
+      actionLabel: 'Undo', duration: 8000,
+      undo: async () => {
+        const r = await google.cancelEvent(event.id)
+        if (r.ok) {
+          relEvents.removeLocal(event.id)
+          updateContact(contact.id, before)
+        } else {
+          setToast({ message: "Couldn't remove it. Delete the event in Google Calendar.", duration: 6000 })
+        }
+      },
+    })
+  }, [relEvents, updateContact, google])
+
+  // One person, two records: move meetings, tasks and referrals to the one
+  // you keep, fold in the other's details, then delete it. Undo puts it all
+  // back.
+  const mergeContacts = useCallback((keepId, dropId) => {
+    const keep = contactsById[keepId]
+    const drop = contactsById[dropId]
+    if (!keep || !drop || keepId === dropId) return
+    const patch = mergePatch(keep, drop)
+    const keepBefore = Object.fromEntries(Object.keys(patch).map(k => [k, keep[k] ?? null]))
+    const movedMeetings = meetings.filter(m => (m.contactIds || []).includes(dropId)).map(m => ({ id: m.id, contactIds: m.contactIds }))
+    const movedTasks = tasks.filter(t => t.contactId === dropId).map(t => t.id)
+    const referred = contacts.filter(c => c.referredBy === dropId && c.id !== keepId).map(c => c.id)
+
+    // Delete first: the kept record may take over the other's main email.
+    deleteContact(dropId)
+    updateContacts([{ id: keepId, ...patch }, ...referred.map(id => ({ id, referredBy: keepId }))])
+    movedMeetings.forEach(m => updateMeeting(m.id, { contactIds: [...new Set(m.contactIds.map(id => (id === dropId ? keepId : id)))] }))
+    movedTasks.forEach(id => saveTask({ id, contactId: keepId }))
+
+    setToast({
+      message: `Merged into ${keep.name || keep.email}`,
+      actionLabel: 'Undo', duration: 8000,
+      undo: () => {
+        updateContacts([{ id: keepId, ...keepBefore }, ...referred.map(id => ({ id, referredBy: dropId }))])
+        addContact(drop)
+        movedMeetings.forEach(m => updateMeeting(m.id, { contactIds: m.contactIds }))
+        movedTasks.forEach(id => saveTask({ id, contactId: dropId }))
+      },
+    })
+  }, [contactsById, contacts, meetings, tasks, deleteContact, updateContacts, updateMeeting, saveTask, addContact])
+
+  const addContactTask = useCallback((data) => saveTask(data), [saveTask])
+
   const peopleForCalendar = {
     contacts, meetings, demoMode, userEmail: sync.userEmail, ignore: settings.contactIgnore || [],
     onOpenContact: openContact,
@@ -303,8 +494,11 @@ function AppMain({ sync }) {
         return <DoView todayTasks={filterByClient(todayTasks)} top3Tasks={filterByClient(top3Tasks)} missedTasks={filterByClient(missedTasks)} unscheduledTasks={filterByClient(unscheduledTasks)}
           companies={companies} projects={projects} onAdd={openAddTask} onComplete={handleComplete} onUncomplete={uncompleteTask} onEdit={openEditTask} onDelete={deleteTask} onReschedule={rescheduleTask}
           completedToday={completedToday} timer={timer} onToggleTimer={timer.toggle} onToggleSubtask={toggleSubtask} onBreakdown={openBreakdown} onToggleTop3={toggleTop3}
-          reachOutSlot={<ReachOutCard due={dueContacts} companies={companies} demoMode={demoMode} emailThreads={emailThreads}
-            onCompleteTouch={completeTouch} onSnooze={snoozeTouch} onOpenContact={openContact}
+          toLogSlot={<ToLogCard items={toLog} contactsById={contactsById} companies={companies}
+            onLog={(item) => openContact(item.contactIds[0], { type: 'log', prefill: logPrefill(item) })}
+            onDismiss={dismissToLog} onOpenContact={openContact} />}
+          reachOutSlot={<ReachOutCard due={reachOut} companies={companies}
+            onSchedule={(id) => openContact(id, { type: 'schedule' })} onOpenContact={openContact}
             onOpenAll={() => setActiveView('relationships')} />} />
       case 'week':
         return <WeekBoard allTasks={filterByClient(allThisWeekTasks)} companies={companies} projects={filterByClient(activeProjects)}
@@ -337,13 +531,19 @@ function AppMain({ sync }) {
         return <Relationships
           contacts={filterByClient(contacts)} allContacts={contacts} companies={companies} meetings={meetings} tasks={tasks}
           emailThreads={emailThreads} gmailAccount={google.server?.email || settings.googleEmail}
-          demoMode={demoMode} focusContactId={focusContactId} onFocusHandled={() => setFocusContactId(null)}
+          demoMode={demoMode} focusContactId={focusContactId} focusAction={focusAction}
+          onFocusHandled={() => { setFocusContactId(null); setFocusAction(null) }}
           userEmail={sync.userEmail} ignore={settings.contactIgnore || []}
+          google={google} bookedById={bookedById} toLogByContact={toLogByContact} notSame={notSame}
+          referralProgram={settings.referralProgram || {}}
           onAdd={addContact} onUpdate={updateContact} onUpdateMany={updateContacts} onDelete={deleteContact}
-          onCompleteTouch={completeTouch} onAddMeeting={addMeeting} onUpdateMeeting={updateMeeting} onAddCompany={addCompany} onDeleteCompany={deleteCompany}
-          onCompleteTask={handleComplete} onEditTask={openEditTask}
+          onAddMeeting={addMeeting} onUpdateMeeting={updateMeeting} onAddCompany={addCompany} onDeleteCompany={deleteCompany}
+          onAddTask={addContactTask} onCompleteTask={handleComplete} onEditTask={openEditTask}
           onOpenClient={(c) => { setCockpitClient(c); setActiveView('clients') }}
-          onIgnoreEmail={ignoreEmail} showToast={setToast} />
+          onIgnoreEmails={ignoreEmails} onNotSame={addNotSame} onDismissToLog={dismissToLog}
+          onMerge={mergeContacts} onScheduled={handleScheduled}
+          onSaveProgram={(program) => saveSettings({ referralProgram: { ...(settings.referralProgram || {}), ...program } })}
+          showToast={setToast} />
       case 'goals':
         return <Goals goals={filterByClient(goals)} vision={vision} companies={companies} activeClient={activeClient} onAddGoal={addGoal} onUpdateGoal={updateGoal} onDeleteGoal={deleteGoal} onSaveVision={saveVision} />
       case 'hours':

@@ -19,7 +19,7 @@ export function Toast({ toast, onAction, onDismiss }) {
         <span className="text-sm flex-1">{toast.message}</span>
         {toast.actionLabel && (
           <button onClick={onAction} className="flex items-center gap-1 text-sm font-display font-semibold text-gold-400 hover:text-gold-300 transition-colors flex-shrink-0">
-            <RotateCcw size={13} /> {toast.actionLabel}
+            {toast.actionLabel === 'Undo' && <RotateCcw size={13} />} {toast.actionLabel}
           </button>
         )}
         <button onClick={onDismiss} className="text-navy-400 hover:text-white transition-colors flex-shrink-0">

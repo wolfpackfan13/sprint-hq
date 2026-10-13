@@ -65,6 +65,7 @@ create table if not exists tasks (
   subtasks jsonb default '[]'::jsonb,
   time_entries jsonb default '[]'::jsonb,
   resources jsonb default '[]'::jsonb,
+  contact_id text,
   created_at timestamptz default now(),
   completed_at timestamptz,
   updated_at timestamptz default now()
@@ -88,6 +89,7 @@ create table if not exists meetings (
   summary text default '',
   recording_url text default '',
   source text default 'manual',
+  calendar_event_id text,
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );
@@ -117,9 +119,23 @@ create table if not exists contacts (
   source_ref text,
   suggested_stage text
     check (suggested_stage is null or suggested_stage in ('nurturing','in_conversation','proposal_out','client','past_client','network')),
+  -- 008: referral track, more than one email, client history, AI next step
+  referral_stage text
+    constraint contacts_referral_stage_check check (referral_stage is null or referral_stage in ('invited','partner')),
+  referral_terms text default '',
+  invited_on date,
+  partner_since date,
+  reward_amount numeric(12, 2),
+  reward_paid_on date,
+  client_until date,
+  other_emails jsonb not null default '[]'::jsonb,
+  next_touch_event_id text,
+  next_step jsonb,
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );
+create index if not exists contacts_other_emails on contacts using gin (other_emails);
+create index if not exists tasks_contact on tasks (user_id, contact_id) where contact_id is not null;
 
 -- NOTES (brain dump)
 create table if not exists notes (

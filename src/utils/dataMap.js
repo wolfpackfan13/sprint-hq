@@ -25,6 +25,8 @@ export const FIELD_MAPS = {
     status: 'status', isTop3: 'is_top3', subtasks: 'subtasks',
     timeEntries: 'time_entries', resources: 'resources',
     createdAt: 'created_at', completedAt: 'completed_at',
+    // A task added from someone's page (migration 008)
+    contactId: 'contact_id',
   },
   meetings: {
     id: 'id', title: 'title', date: 'date', time: 'time',
@@ -34,6 +36,8 @@ export const FIELD_MAPS = {
     // Relationships CRM (migration 004)
     contactIds: 'contact_ids', externalId: 'external_id', summary: 'summary',
     recordingUrl: 'recording_url', source: 'source',
+    // The calendar event a conversation was logged from (migration 008)
+    calendarEventId: 'calendar_event_id',
   },
   contacts: {
     id: 'id', name: 'name', company: 'company', companyId: 'company_id',
@@ -45,6 +49,12 @@ export const FIELD_MAPS = {
     becameClientOn: 'became_client_on', sourceRef: 'source_ref',
     // Set by the Circleback processor for people it adds (migration 005)
     suggestedStage: 'suggested_stage',
+    // Relationships v4 (migration 008)
+    referralStage: 'referral_stage', referralTerms: 'referral_terms',
+    invitedOn: 'invited_on', partnerSince: 'partner_since',
+    rewardAmount: 'reward_amount', rewardPaidOn: 'reward_paid_on',
+    clientUntil: 'client_until', otherEmails: 'other_emails',
+    nextTouchEventId: 'next_touch_event_id', nextStep: 'next_step',
   },
   // Written only by the gmail-sync function (migration 006). Headers only.
   email_threads: {
@@ -113,7 +123,10 @@ export function mergeDeviceLocal(key, cloudValue, localValue) {
 }
 
 // Date columns: Postgres rejects '' here, so empty strings go up as null.
-const DATE_COLUMNS = ['due_date', 'date', 'last_contact_date', 'completed_at', 'next_touch_on', 'became_client_on']
+const DATE_COLUMNS = [
+  'due_date', 'date', 'last_contact_date', 'completed_at', 'next_touch_on', 'became_client_on',
+  'invited_on', 'partner_since', 'reward_paid_on', 'client_until',
+]
 
 // Convert an app object -> DB row (camelCase -> snake_case)
 export function toRow(table, obj, userId) {
@@ -138,7 +151,7 @@ export function fromRow(table, row) {
     if (row[dbCol] !== undefined && row[dbCol] !== null) obj[appKey] = row[dbCol]
   }
   // Ensure JSONB array fields default to []
-  const arrayFields = ['subtasks', 'timeEntries', 'resources', 'actionItems', 'tags', 'contactIds', 'participants']
+  const arrayFields = ['subtasks', 'timeEntries', 'resources', 'actionItems', 'tags', 'contactIds', 'participants', 'otherEmails']
   arrayFields.forEach(f => { if (FIELD_MAPS[table][f] && obj[f] == null) obj[f] = [] })
   return obj
 }

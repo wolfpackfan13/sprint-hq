@@ -13,6 +13,9 @@ export function useMeetings() {
     return updated
   }
 
+  // Adopt a list just pulled from the cloud (already in localStorage).
+  const replaceAll = useCallback((list) => setMeetings(Array.isArray(list) ? list : []), [])
+
   const addMeeting = useCallback((data) => {
     const meeting = {
       id: genId(),
@@ -106,6 +109,7 @@ export function useMeetings() {
 
   return {
     meetings,
+    replaceAll,
     todayMeetings,
     upcomingMeetings,
     pastMeetings,

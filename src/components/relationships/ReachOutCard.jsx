@@ -1,72 +1,94 @@
-import { useState } from 'react'
+import { CalendarPlus, PenLine, X } from 'lucide-react'
 import { Avatar, StageChip } from './bits'
-import { NextTouchModal } from './NextTouchModal'
-import { NETWORK_LABELS, DEMO_MASK, stageOf, touchStatus, threadsForContact, emailedForTouch } from '../../utils/relationships'
+import { REFERRAL_STAGES, referralStageOf, stageOf, firstNameOf } from '../../utils/relationships'
 import { dateUtils } from '../../utils/dateUtils'
 
 const MAX_SHOWN = 5
 
-// Today's "Reach out" card: next touches due today or overdue.
-// Renders nothing when nobody is due.
-export function ReachOutCard({ due, companies, demoMode, emailThreads = [], onCompleteTouch, onSnooze, onOpenContact, onOpenAll }) {
-  const [touch, setTouch] = useState(null) // { mode, contact }
-  if (!due.length && !touch) return null
+const whenLabel = (item) => {
+  const d = new Date(item.start)
+  const day = dateUtils.format(item.day, 'weekday')
+  const date = dateUtils.format(item.day, 'short')
+  return `${day}, ${date} · ${d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`
+}
 
+// Today, top of the list: meetings the calendar found with a lead, client
+// or partner that have no notes yet. Renders nothing when there are none.
+export function ToLogCard({ items, contactsById, companies, onLog, onDismiss, onOpenContact }) {
+  if (!items.length) return null
+  return (
+    <section aria-labelledby="to-log-title" className="rounded-xl border border-[#FBE3B4] bg-gold-50 p-3.5 space-y-2.5">
+      <div className="flex items-center gap-2 flex-wrap">
+        <PenLine size={16} className="text-[#A86800]" />
+        <h2 id="to-log-title" className="font-display font-bold text-navy-900 text-[15px]">To log · {items.length}</h2>
+        <span className="text-xs text-[#6B4300]">Meetings with no notes yet</span>
+      </div>
+      {items.map(item => {
+        const people = item.contactIds.map(id => contactsById[id]).filter(Boolean)
+        const lead = people[0]
+        if (!lead) return null
+        return (
+          <div key={item.eventId} className="flex items-center gap-2 rounded-[10px] bg-white border border-[#FBE3B4] pl-2.5 pr-1.5 py-1.5">
+            <button onClick={() => onOpenContact(lead.id)} className="flex-1 min-w-0 flex gap-2.5 items-center text-left min-h-[44px]">
+              <Avatar contact={lead} company={companies.find(co => co.id === lead.companyId)} size={32} />
+              <span className="min-w-0">
+                <span className="block text-sm font-semibold text-navy-900 truncate">{item.title || `Meeting with ${firstNameOf(lead)}`}</span>
+                <span className="block text-xs text-navy-600 truncate">
+                  {whenLabel(item)} · {people.map(p => p.name || p.email).slice(0, 2).join(', ')}{people.length > 2 ? ` +${people.length - 2}` : ''}
+                </span>
+              </span>
+            </button>
+            <button onClick={() => onLog(item)} className="btn-primary min-h-[40px] px-3.5 text-sm">Log</button>
+            <button onClick={() => onDismiss(item.eventId)} aria-label={`Nothing to log for ${item.title || 'this meeting'}`}
+              className="w-9 h-9 flex items-center justify-center text-navy-500 hover:text-navy-900 rounded-lg"><X size={15} /></button>
+          </div>
+        )
+      })}
+    </section>
+  )
+}
+
+// Today: people with nothing on your calendar who are past the gap their
+// stage allows. One tap opens the Schedule sheet on their page.
+export function ReachOutCard({ due, companies, onSchedule, onOpenContact, onOpenAll }) {
+  if (!due.length) return null
   const shown = due.slice(0, MAX_SHOWN)
   const more = due.length - shown.length
-
-  const save = ({ nextTouchOn, nextTouchReason }) => {
-    if (touch.mode === 'done') onCompleteTouch(touch.contact.id, { nextTouchOn, nextTouchReason, contactedOn: touch.contactedOn })
-    else onSnooze(touch.contact.id, { nextTouchOn, nextTouchReason })
-    setTouch(null)
-  }
-
   return (
-    <section aria-labelledby="reach-out-title" className="card border-[#FBE3B4] p-4">
-      <div className="flex items-baseline justify-between mb-3">
+    <section aria-labelledby="reach-out-title" className="card p-4">
+      <div className="flex items-baseline justify-between mb-2">
         <h2 id="reach-out-title" className="font-display font-bold text-navy-900 text-sm uppercase tracking-wide">Reach out · {due.length}</h2>
         <button onClick={onOpenAll} className="text-[13px] font-medium text-blue-700">All relationships</button>
       </div>
       <div className="divide-y divide-surface-200">
-        {shown.map(c => {
-          const overdue = touchStatus(c.nextTouchOn) === 'overdue'
+        {shown.map(({ contact: c, since, last }) => {
+          const ref = referralStageOf(c)
           const stage = stageOf(c)
-          const emailedOn = emailedForTouch(c, threadsForContact(c, emailThreads))
           return (
-            <div key={c.id} className="py-2.5 first:pt-0 last:pb-0 space-y-2">
-              <button onClick={() => onOpenContact(c.id)} className="w-full flex gap-2.5 items-center text-left">
+            <div key={c.id} className="py-2.5 first:pt-1 last:pb-0 flex items-center gap-2.5">
+              <button onClick={() => onOpenContact(c.id)} className="flex-1 min-w-0 flex gap-2.5 items-center text-left">
                 <Avatar contact={c} company={companies.find(co => co.id === c.companyId)} size={32} />
                 <span className="flex-1 min-w-0">
                   <span className="flex items-center gap-1.5 flex-wrap">
                     <span className="text-sm font-semibold text-navy-900">{c.name}</span>
-                    {stage === 'network' && c.networkLabel
-                      ? <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full border bg-[#F1ECFD] text-[#5B21B6] border-[#DDD0FA]">{NETWORK_LABELS[c.networkLabel]}</span>
-                      : <StageChip stage={stage} />}
+                    {stage !== 'network'
+                      ? <StageChip stage={stage} />
+                      : ref && <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${REFERRAL_STAGES[ref].chip}`}>{REFERRAL_STAGES[ref].label}</span>}
                   </span>
                   <span className="block text-[13px] text-navy-600 truncate">
-                    <span className={overdue ? 'text-red-700 font-semibold' : 'text-[#8A5500] font-semibold'}>
-                      {overdue ? `Overdue · ${dateUtils.format(c.nextTouchOn, 'short')}` : 'Today'}
-                    </span>
-                    {c.nextTouchReason ? ` · ${demoMode ? DEMO_MASK : c.nextTouchReason}` : ''}
+                    Nothing booked · {last ? `last contact ${dateUtils.format(last, 'short')} (${since} days)` : 'no contact logged yet'}
                   </span>
-                  {emailedOn && (
-                    <span className="block text-[13px] text-forest-700">You emailed {dateUtils.format(emailedOn, 'short')}</span>
-                  )}
                 </span>
               </button>
-              <div className="flex gap-2 pl-[42px]">
-                <button onClick={() => setTouch({ mode: 'done', contact: c, contactedOn: emailedOn || undefined })} className="flex-1 btn-primary min-h-[40px] text-sm">Done</button>
-                <button onClick={() => setTouch({ mode: 'snooze', contact: c })} className="flex-1 btn-ghost min-h-[40px] text-sm font-display font-semibold">Snooze</button>
-              </div>
+              <button onClick={() => onSchedule(c.id)} className="btn-ghost min-h-[40px] px-3 text-sm font-display font-semibold flex items-center gap-1.5 flex-shrink-0">
+                <CalendarPlus size={14} /> Schedule
+              </button>
             </div>
           )
         })}
       </div>
       {more > 0 && (
-        <button onClick={onOpenAll} className="mt-3 text-[13px] font-medium text-blue-700">and {more} more</button>
-      )}
-      {touch && (
-        <NextTouchModal mode={touch.mode} contact={touch.contact} demoMode={demoMode} onSave={save} onClose={() => setTouch(null)} />
+        <button onClick={onOpenAll} className="mt-2 text-[13px] font-medium text-blue-700">and {more} more</button>
       )}
     </section>
   )

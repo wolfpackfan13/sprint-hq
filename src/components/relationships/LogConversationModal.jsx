@@ -1,8 +1,8 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useMemo } from 'react'
 import { Link2, Loader2, Check, X, AlertCircle, Search } from 'lucide-react'
 import { Sheet, Avatar } from './bits'
-import { defaultNextTouch, shortDay } from '../../utils/relationships'
-import { dateUtils } from '../../utils/dateUtils'
+import { shortDay } from '../../utils/relationships'
+import { calUtils } from '../../utils/dateUtils'
 import {
   fetchCirclebackMeeting, fetchSavedCopies, draftFromCircleback, matchAttendees, looksLikeCirclebackLink,
   looksLikeMarkdown, circlebackNotesToText, circlebackSummary, firstName,
@@ -16,11 +16,13 @@ const label = 'block text-xs font-semibold text-navy-600 mb-1.5'
 // Relationships header, you pick people, or paste a Circleback link and the
 // people on the call are picked for you. Either way the link fills in the
 // title, date, summary and action items, and the full notes come along.
+// prefill: { date, title, calendarEventId, contactIds } when logging a
+// meeting the calendar found without notes (To log).
 export function LogConversationModal({
-  contact, contacts = [], allContacts = [], meetings = [], userEmail, ignore = [],
+  contact, contacts = [], allContacts = [], meetings = [], userEmail, ignore = [], prefill = null,
   onAdoptSaved, onSave, onClose,
 }) {
-  const today = dateUtils.today()
+  const today = calUtils.localToday()
   const selfEmails = useMemo(() => [userEmail, 'sam.blinson@gmail.com'].filter(Boolean), [userEmail])
 
   const [link, setLink] = useState('')
@@ -29,28 +31,15 @@ export function LogConversationModal({
   const [draft, setDraft] = useState(null)
   const [newPeople, setNewPeople] = useState([])
 
-  const [date, setDate] = useState(today)
-  const [title, setTitle] = useState('')
+  const [date, setDate] = useState(prefill?.date && prefill.date <= today ? prefill.date : today)
+  const [title, setTitle] = useState(prefill?.title || '')
   const [notes, setNotes] = useState('')
-  const [selected, setSelected] = useState(contact ? [contact.id] : [])
+  const [selected, setSelected] = useState(() => [...new Set([...(contact ? [contact.id] : []), ...(prefill?.contactIds || [])])])
   const [query, setQuery] = useState('')
 
   const byId = useMemo(() => new Map(contacts.map(c => [c.id, c])), [contacts])
   const existing = draft ? meetings.find(m => m.externalId && m.externalId === draft.externalId) : null
   const addingNew = newPeople.filter(p => p.add)
-
-  // Next touch belongs to one person: the contact this was opened from, or
-  // the only person picked. With several people, their dates stay as they are.
-  const primary = contact || (selected.length === 1 && addingNew.length === 0 ? byId.get(selected[0]) : null)
-  const [nextTouchOn, setNextTouchOn] = useState('')
-  const [nextTouchReason, setNextTouchReason] = useState('')
-  useEffect(() => {
-    if (!primary) return
-    const keep = primary.nextTouchOn && primary.nextTouchOn > today
-    setNextTouchOn(keep ? primary.nextTouchOn : defaultNextTouch(primary.stage, today))
-    setNextTouchReason(keep ? primary.nextTouchReason || '' : '')
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [primary?.id])
 
   const load = async (value) => {
     const text = (value ?? link).trim()
@@ -94,8 +83,8 @@ export function LogConversationModal({
 
   const clearDraft = () => {
     setDraft(null); setNewPeople([]); setLink(''); setLoadError('')
-    setTitle(''); setNotes(''); setDate(today)
-    setSelected(contact ? [contact.id] : [])
+    setTitle(prefill?.title || ''); setNotes(''); setDate(prefill?.date && prefill.date <= today ? prefill.date : today)
+    setSelected([...new Set([...(contact ? [contact.id] : []), ...(prefill?.contactIds || [])])])
   }
 
   const toggleNew = (email) => setNewPeople(list => list.map(p => p.email === email ? { ...p, add: !p.add } : p))
@@ -134,10 +123,10 @@ export function LogConversationModal({
         externalId: draft?.externalId || null,
         recordingUrl: draft?.recordingUrl || '',
         source: draft ? 'circleback' : 'manual',
+        calendarEventId: prefill?.calendarEventId || null,
       },
       contactIds: selected,
       newPeople: addingNew.map(({ name, email }) => ({ name, email })),
-      nextTouch: primary ? { contactId: primary.id, nextTouchOn, nextTouchReason: nextTouchReason.trim() } : null,
     })
   }
 
@@ -150,11 +139,14 @@ export function LogConversationModal({
       subtitle={contact ? contact.name : 'Paste a Circleback link, or write it up yourself.'}
       onClose={onClose} labelId="log-conversation-title" wide
       footer={
-        <div className="flex gap-2">
-          <button onClick={onClose} className="flex-1 py-2.5 btn-ghost text-sm">Cancel</button>
-          <button onClick={save} disabled={!canSave} className="flex-[2] py-2.5 btn-primary text-sm">
-            {existing ? 'Update meeting' : 'Save'}
-          </button>
+        <div className="space-y-2">
+          <div className="flex gap-2">
+            <button onClick={onClose} className="flex-1 py-2.5 btn-ghost text-sm">Cancel</button>
+            <button onClick={save} disabled={!canSave} className="flex-[2] py-2.5 btn-primary text-sm">
+              {existing ? 'Update meeting' : 'Save'}
+            </button>
+          </div>
+          {contact && <p className="text-xs text-navy-500 text-center">Saving refreshes {firstName(contact.name) || 'their'}'s summary and next step.</p>}
         </div>
       }
     >
@@ -285,21 +277,6 @@ export function LogConversationModal({
             <p className="text-xs text-navy-500 mt-1">The full Circleback notes are saved with the meeting too.</p>
           )}
         </div>
-
-        {primary ? (
-          <div className="flex gap-3">
-            <div className="w-40 flex-shrink-0">
-              <label htmlFor="log-next" className={label}>Next touch{contact ? '' : ` · ${firstName(primary.name) || 'them'}`}</label>
-              <input id="log-next" type="date" value={nextTouchOn} min={today} onChange={e => setNextTouchOn(e.target.value)} className="w-full input-base px-3 py-2.5 text-sm" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <label htmlFor="log-reason" className={label}>Reason</label>
-              <input id="log-reason" value={nextTouchReason} onChange={e => setNextTouchReason(e.target.value)} placeholder="Optional" className="w-full input-base px-3 py-2.5 text-sm" />
-            </div>
-          </div>
-        ) : selected.length + addingNew.length > 1 ? (
-          <p className="text-xs text-navy-500">Everyone's next touch date stays as it is. Set them from each person's page.</p>
-        ) : null}
 
         {!canSave && <p className="text-xs text-navy-600">Pick at least one person to save this to.</p>}
       </div>

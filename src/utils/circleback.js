@@ -167,7 +167,8 @@ export function matchAttendees(attendees = [], contacts = [], { selfEmails = [],
   const self = new Set(selfEmails.map(lower).filter(Boolean))
   const ignored = new Set(ignore.map(lower))
   const byEmail = new Map()
-  contacts.forEach(c => { if (lower(c.email)) byEmail.set(lower(c.email), c) })
+  // Any of a person's addresses (merged contacts keep their old ones).
+  contacts.forEach(c => { [c.email, ...(c.otherEmails || [])].forEach(e => { if (lower(e) && !byEmail.has(lower(e))) byEmail.set(lower(e), c) }) })
   const matchedIds = []
   const newPeople = []
   const seen = new Set()

@@ -27,6 +27,7 @@ export function useTasks() {
       subtasks: data.subtasks || [],        // [{id, title, done}]
       timeEntries: data.timeEntries || [],  // [{id, start, end, seconds, manual, note}]
       resources: data.resources || [],      // [{id, label, url}]
+      contactId: data.contactId || null,    // added from someone's Relationships page
       createdAt: new Date().toISOString(),
       completedAt: null,
     }

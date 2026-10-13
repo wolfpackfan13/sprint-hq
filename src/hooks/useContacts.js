@@ -28,9 +28,20 @@ export function useContacts() {
       notes: '',
       tags: [],
       stage: 'needs_review',
+      // Cached from the calendar: the next event booked with them.
       nextTouchOn: '',
       nextTouchReason: '',
+      nextTouchEventId: null,
       networkLabel: null,
+      referralStage: null,
+      referralTerms: '',
+      invitedOn: '',
+      partnerSince: '',
+      rewardAmount: null,
+      rewardPaidOn: '',
+      clientUntil: '',
+      otherEmails: [],
+      nextStep: null,
       source: null,
       referredBy: null,
       becameClientOn: '',
@@ -60,18 +71,8 @@ export function useContacts() {
     updateContact(id, { lastContactDate: dateUtils.today() })
   }, [updateContact])
 
-  // Done on a next touch: contact happened today, and the next one is set.
-  const completeTouch = useCallback((id, { nextTouchOn = '', nextTouchReason = '', contactedOn } = {}) => {
-    const on = contactedOn || dateUtils.today()
-    setContacts(prev => persist(prev.map(c => {
-      if (c.id !== id) return c
-      const last = (c.lastContactDate || '') > on ? c.lastContactDate : on
-      return { ...c, lastContactDate: last, nextTouchOn, nextTouchReason }
-    })))
-  }, [])
-
   const filterByCompany = (companyId) =>
     companyId ? contacts.filter(c => c.companyId === companyId) : contacts
 
-  return { contacts, addContact, updateContact, updateContacts, deleteContact, touchContact, completeTouch, filterByCompany, replaceAll }
+  return { contacts, addContact, updateContact, updateContacts, deleteContact, touchContact, filterByCompany, replaceAll }
 }

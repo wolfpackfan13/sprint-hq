@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { Trash2 } from 'lucide-react'
 import { Sheet } from './bits'
-import { STAGES, STAGE_ORDER, NETWORK_LABELS, SOURCES, defaultNextTouch, stageOf } from '../../utils/relationships'
-import { dateUtils } from '../../utils/dateUtils'
+import { STAGES, STAGE_ORDER, NETWORK_LABELS, SOURCES, REFERRAL_STAGES, stageOf, referralStageOf, emailsOf, lower } from '../../utils/relationships'
+import { calUtils } from '../../utils/dateUtils'
 
 const field = 'w-full input-base px-4 py-2.5 text-sm'
 const labelCls = 'block text-xs font-semibold text-navy-600 mb-1.5'
@@ -22,7 +22,8 @@ export function ContactForm({ contact, defaultStage = 'nurturing', companies, co
     source: contact?.source || '',
     referredBy: contact?.referredBy || '',
     notes: contact?.notes || '',
-    nextTouchOn: isEdit ? (contact?.nextTouchOn || '') : defaultNextTouch(startStage),
+    referralStage: referralStageOf(contact) || '',
+    otherEmails: (contact?.otherEmails || []).join(', '),
   })
   const [confirmDelete, setConfirmDelete] = useState(false)
   // Demo mode: the profile box starts blank and the saved notes stay as
@@ -30,33 +31,40 @@ export function ContactForm({ contact, defaultStage = 'nurturing', companies, co
   const [notesTouched, setNotesTouched] = useState(!demoMode)
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
-  // One contact per email: Supabase enforces it, and a rejected write
-  // would stall every sync behind it.
-  const emailKey = form.email.trim().toLowerCase()
-  const duplicate = emailKey
-    ? (allContacts || contacts).find(c => c.id !== contact?.id && (c.email || '').trim().toLowerCase() === emailKey)
-    : null
+  // One contact per email: Supabase enforces it for the main address, and
+  // a rejected write would stall every sync behind it. Other addresses are
+  // checked here too, so Gmail and Circleback never match two people.
+  const parsedOthers = [...new Set(form.otherEmails.split(/[\s,;]+/).map(lower).filter(e => e.includes('@')))]
+    .filter(e => e !== lower(form.email))
+  const everyone = (allContacts || contacts).filter(c => c.id !== contact?.id)
+  const emailKey = lower(form.email)
+  const duplicate = emailKey ? everyone.find(c => emailsOf(c).includes(emailKey)) : null
+  const otherDuplicate = parsedOthers.map(e => ({ e, c: everyone.find(c => emailsOf(c).includes(e)) })).find(x => x.c) || null
 
   const setStage = (stage) => setForm(f => ({
     ...f,
     stage,
     networkLabel: stage === 'network' ? f.networkLabel : '',
-    nextTouchOn: isEdit ? f.nextTouchOn : defaultNextTouch(stage),
   }))
 
   const save = () => {
-    if (!form.name.trim() || duplicate) return
+    if (!form.name.trim() || duplicate || otherDuplicate) return
+    const today = calUtils.localToday()
     const data = {
       ...form,
       notes: notesTouched ? form.notes : (contact?.notes || ''),
       name: form.name.trim(),
       email: form.email.trim(),
+      otherEmails: parsedOthers,
       companyId: form.companyId || null,
       networkLabel: form.stage === 'network' ? (form.networkLabel || null) : null,
       source: form.source || null,
       referredBy: form.referredBy || null,
+      referralStage: form.referralStage || null,
     }
-    if (form.stage === 'client' && !contact?.becameClientOn) data.becameClientOn = dateUtils.today()
+    if (form.stage === 'client' && !contact?.becameClientOn) data.becameClientOn = today
+    if (form.referralStage === 'partner' && !contact?.partnerSince) data.partnerSince = today
+    if (form.referralStage === 'invited' && !contact?.invitedOn) data.invitedOn = today
     onSave(isEdit ? { id: contact.id, ...data } : data)
   }
 
@@ -74,7 +82,7 @@ export function ContactForm({ contact, defaultStage = 'nurturing', companies, co
               : <button onClick={() => setConfirmDelete(true)} aria-label="Delete contact" className="p-2.5 btn-ghost text-red-600"><Trash2 size={16} /></button>
           )}
           <button onClick={onClose} className="flex-1 py-2.5 btn-ghost text-sm">Cancel</button>
-          <button onClick={save} disabled={!form.name.trim() || !!duplicate} className="flex-1 py-2.5 btn-primary text-sm">{isEdit ? 'Save' : 'Add contact'}</button>
+          <button onClick={save} disabled={!form.name.trim() || !!duplicate || !!otherDuplicate} className="flex-1 py-2.5 btn-primary text-sm">{isEdit ? 'Save' : 'Add contact'}</button>
         </div>
       }
     >
@@ -96,7 +104,7 @@ export function ContactForm({ contact, defaultStage = 'nurturing', companies, co
 
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label htmlFor="cf-stage" className={labelCls}>Stage</label>
+            <label htmlFor="cf-stage" className={labelCls}>Business stage</label>
             <select id="cf-stage" value={form.stage} onChange={e => setStage(e.target.value)} className={field}>
               {STAGE_ORDER.map(s => <option key={s} value={s}>{STAGES[s].label}</option>)}
             </select>
@@ -129,6 +137,14 @@ export function ContactForm({ contact, defaultStage = 'nurturing', companies, co
           </div>
         )}
 
+        <div>
+          <label htmlFor="cf-ref-stage" className={labelCls}>Referral partner</label>
+          <select id="cf-ref-stage" value={form.referralStage} onChange={e => set('referralStage', e.target.value)} className={field}>
+            <option value="">Not a partner</option>
+            {Object.entries(REFERRAL_STAGES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+          </select>
+        </div>
+
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label htmlFor="cf-email" className={labelCls}>Email</label>
@@ -158,12 +174,14 @@ export function ContactForm({ contact, defaultStage = 'nurturing', companies, co
           </div>
         </div>
 
-        {!isEdit && (
-          <div>
-            <label htmlFor="cf-next" className={labelCls}>Next touch</label>
-            <input id="cf-next" type="date" value={form.nextTouchOn} onChange={e => set('nextTouchOn', e.target.value)} className={field} />
-          </div>
-        )}
+        <div>
+          <label htmlFor="cf-other-emails" className={labelCls}>Other emails <span className="font-normal text-navy-500">· optional</span></label>
+          <input id="cf-other-emails" value={form.otherEmails} onChange={e => set('otherEmails', e.target.value)} placeholder="work@example.com, personal@example.com"
+            aria-invalid={!!otherDuplicate} aria-describedby={otherDuplicate ? 'cf-other-dup' : undefined} className={`${field} ${otherDuplicate ? 'border-red-400' : ''}`} />
+          {otherDuplicate
+            ? <p id="cf-other-dup" className="text-xs text-red-700 mt-1">{otherDuplicate.e} belongs to {otherDuplicate.c.name || 'another contact'}. Merge them from the contact page instead.</p>
+            : <p className="text-xs text-navy-500 mt-1">Gmail sync and Circleback match any of these.</p>}
+        </div>
 
         <div>
           <label htmlFor="cf-notes" className={labelCls}>Profile</label>
