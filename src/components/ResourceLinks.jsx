@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link2, Plus, X, ExternalLink, Trash2 } from 'lucide-react'
 import { genId as makeId } from '../utils/ids'
 import { safeUrl } from '../utils/safeUrl'
+import { contactIdFromLink } from '../utils/relationships'
 
 const genId = () => makeId('res')
 
@@ -45,13 +46,17 @@ export function ResourceLinks({ resources = [], onChange, compact = false }) {
     <div className="space-y-1.5">
       {resources.length > 0 && (
         <div className="space-y-1">
-          {resources.map(r => (
+          {resources.map(r => {
+            // A link to a contact in SprintHQ opens in this tab, so the app
+            // switches to Relationships instead of loading a second copy.
+            const inApp = !!contactIdFromLink(r.url)
+            return (
             <div key={r.id} className="flex items-center gap-2 group">
-              <a href={safeUrl(r.url)} target="_blank" rel="noreferrer"
+              <a href={safeUrl(r.url)} {...(inApp ? {} : { target: '_blank', rel: 'noreferrer' })}
                 className="flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-700 hover:underline flex-1 min-w-0">
                 <Link2 size={11} className="flex-shrink-0" />
                 <span className="truncate">{r.label}</span>
-                <ExternalLink size={9} className="flex-shrink-0 opacity-50" />
+                {!inApp && <ExternalLink size={9} className="flex-shrink-0 opacity-50" />}
               </a>
               {onChange && (
                 <button onClick={() => remove(r.id)} className="p-0.5 text-navy-300 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
@@ -59,7 +64,8 @@ export function ResourceLinks({ resources = [], onChange, compact = false }) {
                 </button>
               )}
             </div>
-          ))}
+            )
+          })}
         </div>
       )}
 

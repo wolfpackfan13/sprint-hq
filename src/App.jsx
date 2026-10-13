@@ -50,7 +50,7 @@ import { SearchOverlay } from './components/SearchOverlay'
 import { GlobalTimer } from './components/GlobalTimer'
 import { genId as makeId } from './utils/ids'
 import { ReachOutCard } from './components/relationships/ReachOutCard'
-import { dueTouches, contactIdsFromAttendees, hiddenInDemo } from './utils/relationships'
+import { dueTouches, contactIdsFromAttendees, hiddenInDemo, contactIdFromLink } from './utils/relationships'
 
 function AppMain({ sync }) {
   const [activeView, setActiveView] = useState('do')
@@ -245,6 +245,20 @@ function AppMain({ sync }) {
   // ── Relationships ──
   const demoMode = !!settings.demoMode
   const openContact = useCallback((id) => { setFocusContactId(id); setActiveView('relationships') }, [])
+  // #contact=<id> (the links Prep My Day puts on prep tasks) opens that
+  // contact, on load or when clicked from inside the app. The hash is
+  // cleared afterwards so a refresh doesn't jump back to it.
+  useEffect(() => {
+    const fromHash = () => {
+      const id = contactIdFromLink(window.location.href)
+      if (!id) return
+      openContact(id)
+      try { window.history.replaceState(null, '', window.location.pathname + window.location.search) } catch { /* ignore */ }
+    }
+    fromHash()
+    window.addEventListener('hashchange', fromHash)
+    return () => window.removeEventListener('hashchange', fromHash)
+  }, [openContact])
   const ignoreEmail = useCallback((email) => {
     const list = settings.contactIgnore || []
     const e = (email || '').trim().toLowerCase()
@@ -363,7 +377,8 @@ function AppMain({ sync }) {
       case 'calendar':
         return <Calendar google={google} companies={companies} projects={activeProjects} settings={settings} onCreateTask={(t) => saveTask(t)} eventNotes={eventNotes} onSaveEventNote={saveEventNote} onOpenSettings={() => setActiveView('settings')} people={peopleForCalendar} />
       case 'prep':
-        return <PrepDay companies={companies} projects={activeProjects} google={google} settings={settings} onCreateTasks={createTasksBatch} onOpenSettings={() => setActiveView('settings')} />
+        return <PrepDay companies={companies} projects={activeProjects} google={google} settings={settings} onCreateTasks={createTasksBatch} onOpenSettings={() => setActiveView('settings')}
+          contacts={contacts} meetings={meetings} userEmail={sync.userEmail} demoMode={demoMode} onOpenContact={openContact} />
       case 'archive':
         return <Archive tasks={tasks} companies={companies} projects={projects} activeClient={activeClient} onUncomplete={uncompleteTask} onDelete={deleteTask} tasksForProject={tasksForProject} onReopenProject={reopenProject} onDeleteProject={deleteProject} />
       case 'settings':

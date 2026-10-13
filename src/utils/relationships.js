@@ -199,6 +199,49 @@ export function hiddenInDemo(c, demoMode) {
   return !!demoMode && c.networkLabel === 'personal'
 }
 
+// The contacts on a calendar invite, in invite order, skipping your own
+// address and (in demo mode) Personal contacts.
+export function contactsOnInvite(attendeeEmails = [], contacts = [], { selfEmail = '', demoMode = false } = {}) {
+  const self = (selfEmail || '').trim().toLowerCase()
+  const seen = new Set()
+  return attendeeEmails
+    .filter(e => e && e.trim().toLowerCase() !== self)
+    .map(e => contactForEmail(e, contacts))
+    .filter(c => c && !seen.has(c.id) && seen.add(c.id))
+    .filter(c => !hiddenInDemo(c, demoMode))
+}
+
+// "Last time with Jane Doe, Sep 12: agreed to send two pricing options."
+// The summary is left off in demo mode, since this line is saved into a task.
+export function lastTimeLine(c, meetings = [], { demoMode = false } = {}) {
+  const who = (c.name || c.email || 'them').trim()
+  const last = meetingsForContact(c, meetings)[0]
+  if (!last) return `${who}: no conversations logged yet.`
+  const head = `Last time with ${who}, ${dateUtils.format(last.date, 'short')}`
+  const blurb = demoMode ? '' : meetingBlurb(last).replace(/^•\s*/, '').trim()
+  return blurb ? `${head}: ${blurb}` : `${head}.`
+}
+
+// A link that opens this contact in SprintHQ, for task resources. It points
+// at this page with #contact=<id>, which App picks up on load or on click.
+export function contactLink(id) {
+  if (typeof window === 'undefined') return ''
+  const { origin, pathname } = window.location
+  return `${origin}${pathname}#contact=${encodeURIComponent(id)}`
+}
+
+// The contact id in an in-app contact link, or null for any other URL.
+export function contactIdFromLink(url) {
+  try {
+    const u = new URL(url, typeof window !== 'undefined' ? window.location.href : undefined)
+    if (typeof window !== 'undefined' && u.origin !== window.location.origin) return null
+    const m = u.hash.match(/^#contact=(.+)$/)
+    return m ? decodeURIComponent(m[1]) : null
+  } catch {
+    return null
+  }
+}
+
 // The latest meeting with this contact, for the calendar's "last time" line.
 export function contactForEmail(email, contacts = []) {
   const e = (email || '').trim().toLowerCase()
