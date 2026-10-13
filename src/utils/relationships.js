@@ -222,6 +222,28 @@ export function lastTimeLine(c, meetings = [], { demoMode = false } = {}) {
   return blurb ? `${head}: ${blurb}` : `${head}.`
 }
 
+// "Last time" lines for several people, one line per meeting: people whose
+// latest conversation was the same meeting share a line, so a prep task
+// doesn't repeat one summary per attendee.
+// "Last time with Jane Doe and Sam Lee, Sep 12: agreed to send two options."
+export function lastTimeLines(people = [], meetings = [], { demoMode = false } = {}) {
+  const groups = []
+  for (const c of people) {
+    const last = meetingsForContact(c, meetings)[0]
+    const shared = last && groups.find(g => g.meeting && g.meeting.id === last.id)
+    if (shared) shared.people.push(c)
+    else groups.push({ meeting: last, people: [c] })
+  }
+  return groups.map(({ meeting, people: group }) => {
+    if (!meeting || group.length === 1) return lastTimeLine(group[0], meetings, { demoMode })
+    const names = group.map(c => (c.name || c.email || 'them').trim())
+    const who = `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
+    const head = `Last time with ${who}, ${dateUtils.format(meeting.date, 'short')}`
+    const blurb = demoMode ? '' : meetingBlurb(meeting).replace(/^•\s*/, '').trim()
+    return blurb ? `${head}: ${blurb}` : `${head}.`
+  })
+}
+
 // A link that opens this contact in SprintHQ, for task resources. It points
 // at this page with #contact=<id>, which App picks up on load or on click.
 export function contactLink(id) {
