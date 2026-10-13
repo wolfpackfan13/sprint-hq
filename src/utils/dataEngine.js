@@ -1,6 +1,6 @@
 import { supabase } from './supabase'
 import { storage } from './storage'
-import { FIELD_MAPS, TABLE_STORAGE_KEY, SINGLETON_KEYS, DEVICE_LOCAL_FIELDS, toRow, fromRow, stripDeviceLocal, mergeDeviceLocal } from './dataMap'
+import { FIELD_MAPS, TABLE_STORAGE_KEY, PULL_ONLY_TABLES, SINGLETON_KEYS, DEVICE_LOCAL_FIELDS, toRow, fromRow, stripDeviceLocal, mergeDeviceLocal } from './dataMap'
 
 const TABLES = Object.keys(TABLE_STORAGE_KEY)
 
@@ -21,6 +21,13 @@ export async function pullAllFromCloud(userId) {
     }
   }
 
+  // Read-only tables. Not having one yet (migration not run) is not an
+  // error: the app simply has nothing to show from it.
+  for (const table of Object.keys(PULL_ONLY_TABLES)) {
+    const objs = await pullReadOnly(userId, table)
+    if (objs) storage.setLocalOnly(PULL_ONLY_TABLES[table], objs)
+  }
+
   // Singletons from app_state
   const { data: stateRows, error: stateErr } = await supabase.from('app_state').select('*').eq('user_id', userId)
   if (stateErr) throw stateErr
@@ -33,6 +40,38 @@ export async function pullAllFromCloud(userId) {
   }
 
   return foundAny
+}
+
+async function pullReadOnly(userId, table) {
+  const { data, error } = await supabase.from(table).select('*').eq('user_id', userId)
+    .order('last_message_at', { ascending: false }).limit(2000)
+  if (error) {
+    console.warn(`Skipped ${table}: ${error.message}`)
+    return null
+  }
+  return (data || []).map(r => fromRow(table, r))
+}
+
+// Re-reads a few tables after the server changed them (the Gmail sync adds
+// people and moves last contact dates). Writes to localStorage without a
+// sync event and returns { storageKey: objects } for the hooks to adopt.
+export async function pullTables(userId, tables) {
+  const out = {}
+  for (const table of tables) {
+    if (PULL_ONLY_TABLES[table]) {
+      const objs = await pullReadOnly(userId, table)
+      if (objs) { storage.setLocalOnly(PULL_ONLY_TABLES[table], objs); out[PULL_ONLY_TABLES[table]] = objs }
+      continue
+    }
+    const key = TABLE_STORAGE_KEY[table]
+    if (!key) continue
+    const { data, error } = await supabase.from(table).select('*').eq('user_id', userId)
+    if (error) throw error
+    const objs = (data || []).map(r => fromRow(table, r))
+    storage.setLocalOnly(key, objs)
+    out[key] = objs
+  }
+  return out
 }
 
 // ── One-time migration: old single-blob (app_data) -> new tables ──

@@ -46,6 +46,12 @@ export const FIELD_MAPS = {
     // Set by the Circleback processor for people it adds (migration 005)
     suggestedStage: 'suggested_stage',
   },
+  // Written only by the gmail-sync function (migration 006). Headers only.
+  email_threads: {
+    id: 'id', subject: 'subject', participants: 'participants', contactIds: 'contact_ids',
+    messageCount: 'message_count', firstMessageAt: 'first_message_at', lastMessageAt: 'last_message_at',
+    lastDirection: 'last_direction', lastInboundAt: 'last_inbound_at', lastOutboundAt: 'last_outbound_at',
+  },
   notes: {
     id: 'id', content: 'content', pinned: 'pinned', createdAt: 'created_at',
   },
@@ -67,12 +73,19 @@ export const TABLE_STORAGE_KEY = {
   invoices: 'invoices',
 }
 
+// Tables the app reads but never writes. They are pulled with everything
+// else and kept out of TABLE_STORAGE_KEY, so the sync engine never tries to
+// push them (the database would refuse: the app only has select on them).
+export const PULL_ONLY_TABLES = {
+  email_threads: 'emailThreads',
+}
+
 // Singleton state keys (stored in app_state table, key/value)
 export const SINGLETON_KEYS = ['sprint', 'vision', 'settings', 'invoiceProfile', 'eventNotes']
 
 // Fields that must never leave the device. These are live credentials:
 // an Anthropic API key (billable) and a Google OAuth access token carrying
-// gmail.readonly / calendar.readonly / drive.file scopes. They are stripped
+// gmail.metadata / calendar.readonly / drive.file scopes. They are stripped
 // before any write to Supabase and re-merged from localStorage on pull.
 export const DEVICE_LOCAL_FIELDS = {
   settings: ['anthropicKey', 'googleToken', 'googleTokenExpiry', 'googleConnected', 'googleEmail'],
@@ -125,7 +138,7 @@ export function fromRow(table, row) {
     if (row[dbCol] !== undefined && row[dbCol] !== null) obj[appKey] = row[dbCol]
   }
   // Ensure JSONB array fields default to []
-  const arrayFields = ['subtasks', 'timeEntries', 'resources', 'actionItems', 'tags', 'contactIds']
+  const arrayFields = ['subtasks', 'timeEntries', 'resources', 'actionItems', 'tags', 'contactIds', 'participants']
   arrayFields.forEach(f => { if (FIELD_MAPS[table][f] && obj[f] == null) obj[f] = [] })
   return obj
 }

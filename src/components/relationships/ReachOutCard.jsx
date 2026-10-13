@@ -1,14 +1,14 @@
 import { useState } from 'react'
 import { Avatar, StageChip } from './bits'
 import { NextTouchModal } from './NextTouchModal'
-import { NETWORK_LABELS, DEMO_MASK, stageOf, touchStatus } from '../../utils/relationships'
+import { NETWORK_LABELS, DEMO_MASK, stageOf, touchStatus, threadsForContact, emailedForTouch } from '../../utils/relationships'
 import { dateUtils } from '../../utils/dateUtils'
 
 const MAX_SHOWN = 5
 
 // Today's "Reach out" card: next touches due today or overdue.
 // Renders nothing when nobody is due.
-export function ReachOutCard({ due, companies, demoMode, onCompleteTouch, onSnooze, onOpenContact, onOpenAll }) {
+export function ReachOutCard({ due, companies, demoMode, emailThreads = [], onCompleteTouch, onSnooze, onOpenContact, onOpenAll }) {
   const [touch, setTouch] = useState(null) // { mode, contact }
   if (!due.length && !touch) return null
 
@@ -16,7 +16,7 @@ export function ReachOutCard({ due, companies, demoMode, onCompleteTouch, onSnoo
   const more = due.length - shown.length
 
   const save = ({ nextTouchOn, nextTouchReason }) => {
-    if (touch.mode === 'done') onCompleteTouch(touch.contact.id, { nextTouchOn, nextTouchReason })
+    if (touch.mode === 'done') onCompleteTouch(touch.contact.id, { nextTouchOn, nextTouchReason, contactedOn: touch.contactedOn })
     else onSnooze(touch.contact.id, { nextTouchOn, nextTouchReason })
     setTouch(null)
   }
@@ -31,6 +31,7 @@ export function ReachOutCard({ due, companies, demoMode, onCompleteTouch, onSnoo
         {shown.map(c => {
           const overdue = touchStatus(c.nextTouchOn) === 'overdue'
           const stage = stageOf(c)
+          const emailedOn = emailedForTouch(c, threadsForContact(c, emailThreads))
           return (
             <div key={c.id} className="py-2.5 first:pt-0 last:pb-0 space-y-2">
               <button onClick={() => onOpenContact(c.id)} className="w-full flex gap-2.5 items-center text-left">
@@ -48,10 +49,13 @@ export function ReachOutCard({ due, companies, demoMode, onCompleteTouch, onSnoo
                     </span>
                     {c.nextTouchReason ? ` · ${demoMode ? DEMO_MASK : c.nextTouchReason}` : ''}
                   </span>
+                  {emailedOn && (
+                    <span className="block text-[13px] text-forest-700">You emailed {dateUtils.format(emailedOn, 'short')}</span>
+                  )}
                 </span>
               </button>
               <div className="flex gap-2 pl-[42px]">
-                <button onClick={() => setTouch({ mode: 'done', contact: c })} className="flex-1 btn-primary min-h-[40px] text-sm">Done</button>
+                <button onClick={() => setTouch({ mode: 'done', contact: c, contactedOn: emailedOn || undefined })} className="flex-1 btn-primary min-h-[40px] text-sm">Done</button>
                 <button onClick={() => setTouch({ mode: 'snooze', contact: c })} className="flex-1 btn-ghost min-h-[40px] text-sm font-display font-semibold">Snooze</button>
               </div>
             </div>

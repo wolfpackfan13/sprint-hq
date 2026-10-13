@@ -4,10 +4,11 @@ import { Avatar, SectionLabel } from './bits'
 import {
   STAGES, STAGE_ORDER, NETWORK_LABELS, SOURCES, DEMO_MASK,
   stageOf, segmentOf, touchStatus, touchLabel, meetingBlurb, lastContactDate,
+  localDateOf, emailedForTouch, gmailThreadUrl,
 } from '../../utils/relationships'
 import { isCirclebackUrl } from '../../utils/circleback'
 import { safeUrl } from '../../utils/safeUrl'
-import { dateUtils } from '../../utils/dateUtils'
+import { dateUtils, calUtils } from '../../utils/dateUtils'
 
 const card = 'bg-white border border-surface-300 rounded-xl p-4 md:p-5'
 
@@ -86,8 +87,31 @@ function HistoryRow({ meeting, demoMode }) {
   )
 }
 
+// One Gmail thread: when, subject, who wrote last. Headers only; the
+// message itself opens in Gmail.
+function EmailRow({ thread, firstName, account, demoMode }) {
+  const day = localDateOf(thread.lastMessageAt)
+  const who = thread.lastDirection === 'out' ? 'You wrote last' : `${firstName || 'They'} wrote last`
+  const count = thread.messageCount > 1 ? ` · ${thread.messageCount} messages` : ''
+  return (
+    <div className="flex gap-3 py-3 border-b border-surface-200 last:border-0 items-start">
+      <span className="w-14 flex-shrink-0 text-[13px] text-navy-600 pt-px">{dateUtils.format(day, 'short')}</span>
+      <span className="flex-1 min-w-0">
+        <span className="block text-sm font-semibold text-navy-900 truncate">{demoMode ? DEMO_MASK : (thread.subject || '(no subject)')}</span>
+        <span className="block text-[13px] text-navy-600">{who}{count}</span>
+      </span>
+      <a href={gmailThreadUrl(thread.id, account)} target="_blank" rel="noreferrer"
+        className="inline-flex items-center gap-1 text-[13px] font-medium text-blue-700 flex-shrink-0 min-h-[32px]">
+        <ExternalLink size={13} /> Gmail
+      </a>
+    </div>
+  )
+}
+
+const EMAIL_SHOWN = 5
+
 export function ContactDetail({
-  contact, companies, contacts, linkedMeetings, openTasks, demoMode,
+  contact, companies, contacts, linkedMeetings, linkedThreads = [], gmailAccount, openTasks, demoMode,
   onBack, onEdit, onStageChange, onConvert, onDone, onSnooze, onLog,
   onCompleteTask, onEditTask, onOpenContact, onOpenClient,
 }) {
@@ -101,6 +125,13 @@ export function ContactDetail({
   const referrer = contacts.find(c => c.id === contact.referredBy)
   const referred = contacts.filter(c => c.referredBy === contact.id)
   const mask = (text) => (demoMode && text ? DEMO_MASK : text)
+  const [allEmail, setAllEmail] = useState(false)
+  const firstName = (contact.name || '').split(' ')[0]
+  const emailedOn = emailedForTouch(contact, linkedThreads)
+  const localToday = calUtils.localToday()
+  const emailedLabel = emailedOn === localToday ? 'today' : emailedOn === calUtils.addDays(localToday, -1) ? 'yesterday' : `on ${dateUtils.format(emailedOn, 'short')}`
+  const shownThreads = allEmail ? linkedThreads : linkedThreads.slice(0, EMAIL_SHOWN)
+  const lastDate = lastContactDate(contact, linkedMeetings, linkedThreads)
   const subtitle = [contact.role, contact.company || (segment === 'clients' ? company?.name : '')].filter(Boolean).join(' · ')
 
   return (
@@ -177,6 +208,14 @@ export function ContactDetail({
               <button onClick={onSnooze} className="flex-1 sm:flex-none btn-ghost px-4 py-2.5 text-sm font-display font-semibold min-h-[44px]">{contact.nextTouchOn ? 'Snooze' : 'Set date'}</button>
             </div>
           </div>
+          {emailedOn && (
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-[10px] bg-forest-50 border border-[#B7E4C7] px-3 py-2">
+              <p className="text-[13px] text-navy-800 flex items-center gap-1.5">
+                <Mail size={13} className="text-forest-600 flex-shrink-0" /> You emailed {firstName || 'them'} {emailedLabel}. Was that this touch?
+              </p>
+              <button onClick={() => onDone(emailedOn)} className="text-[13px] font-semibold text-forest-700 min-h-[36px] px-1">Mark done</button>
+            </div>
+          )}
           <button onClick={onLog} className="mt-3 w-full min-h-[40px] rounded-[10px] border border-dashed border-surface-400 text-sm font-medium text-navy-600 hover:bg-surface-100 flex items-center justify-center gap-1.5">
             <Plus size={14} /> Log a conversation
           </button>
@@ -217,6 +256,25 @@ export function ContactDetail({
             <p className="text-sm text-navy-600 mt-2">No meetings yet. Log a conversation above, or paste a Circleback link there, to start the history.</p>
           )}
         </div>
+
+        {/* Email, from the hourly Gmail sync */}
+        {linkedThreads.length > 0 && (
+          <div className={card}>
+            <div className="flex justify-between items-baseline gap-3">
+              <SectionLabel>Email · {linkedThreads.length}</SectionLabel>
+              <span className="text-xs text-navy-500">From Gmail, every hour</span>
+            </div>
+            <div className="mt-1">
+              {shownThreads.map(t => <EmailRow key={t.id} thread={t} firstName={firstName} account={gmailAccount} demoMode={demoMode} />)}
+            </div>
+            {linkedThreads.length > EMAIL_SHOWN && (
+              <button onClick={() => setAllEmail(v => !v)} aria-expanded={allEmail}
+                className="mt-1 inline-flex items-center gap-1 text-[13px] font-medium text-navy-600 hover:text-navy-900 min-h-[32px]">
+                {allEmail ? <><ChevronUp size={14} /> Show fewer</> : <><ChevronDown size={14} /> Show all {linkedThreads.length}</>}
+              </button>
+            )}
+          </div>
+        )}
 
         <div className="grid md:grid-cols-2 gap-4">
           {/* Profile */}
@@ -268,7 +326,7 @@ export function ContactDetail({
           <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
             {contact.email && <div className="col-span-2 sm:col-span-1"><dt className="text-xs text-navy-600">Email</dt><dd className="truncate"><a href={`mailto:${contact.email}`} className="text-blue-700">{contact.email}</a></dd></div>}
             {contact.phone && <div><dt className="text-xs text-navy-600">Phone</dt><dd>{contact.phone}</dd></div>}
-            <div><dt className="text-xs text-navy-600">Last contact</dt><dd>{lastContactDate(contact, linkedMeetings) ? dateUtils.format(lastContactDate(contact, linkedMeetings)) : 'Not yet'}</dd></div>
+            <div><dt className="text-xs text-navy-600">Last contact</dt><dd>{lastDate ? dateUtils.format(lastDate) : 'Not yet'}</dd></div>
             {contact.source && <div><dt className="text-xs text-navy-600">Source</dt><dd>{SOURCES[contact.source] || contact.source}</dd></div>}
             {referrer && <div><dt className="text-xs text-navy-600">Referred by</dt><dd><button onClick={() => onOpenContact(referrer.id)} className="text-blue-700">{referrer.name}</button></dd></div>}
             {company && <div><dt className="text-xs text-navy-600">Client / Area</dt><dd>{company.name}</dd></div>}

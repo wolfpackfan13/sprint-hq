@@ -11,6 +11,7 @@ import {
   STAGES, STAGE_ORDER, SEGMENTS, NETWORK_LABELS, DEMO_MASK,
   stageOf, segmentOf, touchStatus, touchLabel, meetingsForContact, meetingBlurb,
   lastContactDate, openTasksForContact, companyNameFor, sortContacts, hiddenInDemo,
+  threadsForContact, localDateOf,
 } from '../utils/relationships'
 import { dateUtils } from '../utils/dateUtils'
 import { genId as makeId } from '../utils/ids'
@@ -18,7 +19,7 @@ import { genId as makeId } from '../utils/ids'
 const GROUP_LABELS = { stage: 'Stage', company: 'Company', none: 'None' }
 const SORT_LABELS = { next: 'Next touch', last: 'Last contact', name: 'Name' }
 
-function ContactRow({ contact, company, linked, lastDate, openTaskCount, selected, demoMode, onSelect }) {
+function ContactRow({ contact, company, linked, threads = [], lastDate, openTaskCount, selected, demoMode, onSelect }) {
   const segment = segmentOf(contact)
   const status = touchStatus(contact.nextTouchOn)
   const last = linked[0]
@@ -27,9 +28,14 @@ function ContactRow({ contact, company, linked, lastDate, openTaskCount, selecte
     : segment === 'network' && contact.networkLabel
       ? [contact.company, NETWORK_LABELS[contact.networkLabel]].filter(Boolean).join(' · ')
       : (contact.company || 'Independent')
-  const third = last
-    ? `${dateUtils.format(last.date, 'short')} · ${demoMode ? DEMO_MASK : (meetingBlurb(last) || last.title || 'Conversation')}`
-    : lastDate ? `Last contact ${dateUtils.format(lastDate, 'short')}` : ''
+  // The newer of their last meeting and their last email thread.
+  const thread = threads[0]
+  const threadDay = localDateOf(thread?.lastMessageAt)
+  const third = thread && threadDay > (last?.date || '')
+    ? `${dateUtils.format(threadDay, 'short')} · Emailed: ${demoMode ? DEMO_MASK : (thread.subject || '(no subject)')}`
+    : last
+      ? `${dateUtils.format(last.date, 'short')} · ${demoMode ? DEMO_MASK : (meetingBlurb(last) || last.title || 'Conversation')}`
+      : lastDate ? `Last contact ${dateUtils.format(lastDate, 'short')}` : ''
 
   return (
     <button onClick={() => onSelect(contact.id)} aria-current={selected ? 'true' : undefined}
@@ -54,7 +60,7 @@ function ContactRow({ contact, company, linked, lastDate, openTaskCount, selecte
 }
 
 export function Relationships({
-  contacts, allContacts, companies, meetings, tasks, demoMode,
+  contacts, allContacts, companies, meetings, tasks, demoMode, emailThreads = [], gmailAccount,
   focusContactId, onFocusHandled, userEmail, ignore,
   onAdd, onUpdate, onUpdateMany, onDelete, onCompleteTouch,
   onAddMeeting, onUpdateMeeting, onAddCompany, onDeleteCompany,
@@ -83,11 +89,17 @@ export function Relationships({
     return map
   }, [people, meetings])
 
+  const threadsById = useMemo(() => {
+    const map = {}
+    people.forEach(c => { map[c.id] = threadsForContact(c, emailThreads) })
+    return map
+  }, [people, emailThreads])
+
   const lastDates = useMemo(() => {
     const map = {}
-    people.forEach(c => { map[c.id] = lastContactDate(c, linkedById[c.id] || []) })
+    people.forEach(c => { map[c.id] = lastContactDate(c, linkedById[c.id] || [], threadsById[c.id] || []) })
     return map
-  }, [people, linkedById])
+  }, [people, linkedById, threadsById])
 
   const openTasksById = useMemo(() => {
     const map = {}
@@ -191,7 +203,7 @@ export function Relationships({
   const handleTouchSave = ({ nextTouchOn, nextTouchReason }) => {
     const c = contactById(touch.contactId)
     if (!c) { setTouch(null); return }
-    if (touch.mode === 'done') onCompleteTouch(c.id, { nextTouchOn, nextTouchReason })
+    if (touch.mode === 'done') onCompleteTouch(c.id, { nextTouchOn, nextTouchReason, contactedOn: touch.contactedOn })
     else if (touch.mode === 'stage') {
       onUpdate(c.id, {
         stage: touch.stage, nextTouchOn, nextTouchReason,
@@ -322,13 +334,15 @@ export function Relationships({
       companies={companies}
       contacts={people}
       linkedMeetings={linkedById[contact.id] || []}
+      linkedThreads={threadsById[contact.id] || []}
+      gmailAccount={gmailAccount}
       openTasks={openTasksById[contact.id] || []}
       demoMode={demoMode}
       onBack={withBack ? () => setMobileDetail(false) : null}
       onEdit={() => setForm({ contact })}
       onStageChange={(s) => handleStageChange(contact, s)}
       onConvert={() => setConvertId(contact.id)}
-      onDone={() => setTouch({ mode: 'done', contactId: contact.id })}
+      onDone={(contactedOn) => setTouch({ mode: 'done', contactId: contact.id, contactedOn: typeof contactedOn === 'string' ? contactedOn : undefined })}
       onSnooze={() => setTouch({ mode: 'snooze', contactId: contact.id })}
       onLog={() => setLog({ contactId: contact.id })}
       onCompleteTask={onCompleteTask}
@@ -419,7 +433,7 @@ export function Relationships({
                   )}
                   {g.items.map(c => (
                     <ContactRow key={c.id} contact={c} company={companies.find(co => co.id === c.companyId)}
-                      linked={linkedById[c.id] || []} lastDate={lastDates[c.id]} openTaskCount={(openTasksById[c.id] || []).length}
+                      linked={linkedById[c.id] || []} threads={threadsById[c.id] || []} lastDate={lastDates[c.id]} openTaskCount={(openTasksById[c.id] || []).length}
                       selected={desktopContact?.id === c.id} demoMode={demoMode} onSelect={select} />
                   ))}
                 </div>
@@ -433,7 +447,7 @@ export function Relationships({
                   </button>
                   {showPast && groups.past.map(c => (
                     <ContactRow key={c.id} contact={c} company={companies.find(co => co.id === c.companyId)}
-                      linked={linkedById[c.id] || []} lastDate={lastDates[c.id]} openTaskCount={(openTasksById[c.id] || []).length}
+                      linked={linkedById[c.id] || []} threads={threadsById[c.id] || []} lastDate={lastDates[c.id]} openTaskCount={(openTasksById[c.id] || []).length}
                       selected={desktopContact?.id === c.id} demoMode={demoMode} onSelect={select} />
                   ))}
                 </div>

@@ -35,6 +35,7 @@ export const SOURCES = {
   event: 'Event',
   content: 'Content',
   circleback: 'Circleback',
+  gmail: 'Gmail',
   notion_import: 'Notion import',
   other: 'Other',
 }
@@ -107,10 +108,51 @@ export function meetingBlurb(m) {
   return text.split('\n')[0]
 }
 
-export function lastContactDate(c, linkedMeetings = []) {
+// The newest of: the date on the contact, their latest meeting, and their
+// latest email thread. The email is counted here as well as on the contact
+// row, because a contact edited on a device that loaded before the hourly
+// sync can push its older date back up.
+export function lastContactDate(c, linkedMeetings = [], linkedThreads = []) {
   const fromMeeting = linkedMeetings[0]?.date || ''
+  const fromEmail = localDateOf(linkedThreads[0]?.lastMessageAt)
   const manual = c.lastContactDate || ''
-  return fromMeeting > manual ? fromMeeting : manual
+  return [fromMeeting, fromEmail, manual].reduce((a, b) => (b > a ? b : a), '')
+}
+
+// ── Email (from the hourly Gmail sync) ──
+// YYYY-MM-DD in this device's time zone for an ISO timestamp.
+export function localDateOf(iso) {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
+// Threads this person is on, newest first. Matches by id, and by email for
+// someone added since the last sync.
+export function threadsForContact(c, threads = []) {
+  if (!c || !threads.length) return []
+  const email = (c.email || '').trim().toLowerCase()
+  return threads
+    .filter(t => (t.contactIds || []).includes(c.id) || (email && (t.participants || []).includes(email)))
+    .sort((a, b) => (b.lastMessageAt || '').localeCompare(a.lastMessageAt || ''))
+}
+
+// The day you last wrote to them, when it is close enough to their next
+// touch (from three days before it onward) to probably be that touch.
+// Returns '' otherwise.
+export function emailedForTouch(c, linkedThreads = []) {
+  if (!c?.nextTouchOn) return ''
+  const latest = linkedThreads.reduce((mx, t) => (t.lastOutboundAt && t.lastOutboundAt > mx ? t.lastOutboundAt : mx), '')
+  const day = localDateOf(latest)
+  return day && day >= calUtils.addDays(c.nextTouchOn, -3) ? day : ''
+}
+
+// Opens a thread in Gmail, in the right account when you have several.
+export function gmailThreadUrl(threadId, account) {
+  const who = account ? `?authuser=${encodeURIComponent(account)}` : ''
+  return `https://mail.google.com/mail/${who}#all/${encodeURIComponent(threadId)}`
 }
 
 // Open tasks that came out of this person's meetings: action items pushed

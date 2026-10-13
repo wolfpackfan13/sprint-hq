@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { useTasks } from './hooks/useTasks'
 import { useSprint } from './hooks/useSprint'
 import { useNotes } from './hooks/useNotes'
@@ -77,11 +77,37 @@ function AppMain({ sync }) {
   const { sprint, saveSprint, updateWeekGoal, updateSprintGoal, resetSprint, currentWeek, progress } = useSprint()
   const { notes, addNote, deleteNote, togglePin } = useNotes()
   const { companies, addCompany, updateCompany, deleteCompany } = useCompanies()
-  const { contacts, addContact, updateContact, updateContacts, deleteContact, completeTouch } = useContacts()
+  const { contacts, addContact, updateContact, updateContacts, deleteContact, completeTouch, replaceAll: replaceContacts } = useContacts()
+  // Written by the hourly Gmail sync; the app only reads them.
+  const [emailThreads, setEmailThreads] = useState(() => storage.get('emailThreads', []))
   const { meetings, addMeeting, updateMeeting, deleteMeeting, toggleActionItem, addActionItem } = useMeetings()
   const { goals, vision, activeGoals, addGoal, updateGoal, deleteGoal, saveVision } = useGoals()
   const { settings, saveSettings, saveGoogleToken, expireGoogleToken, clearGoogleToken } = useSettings()
-  const google = useGoogle(settings, { saveSettings, saveGoogleToken, expireGoogleToken, clearGoogleToken })
+  // After a Gmail sync: re-read contacts (new people, last contact dates) and
+  // email threads. Skipped while local edits are still waiting to sync.
+  const refreshFromCloud = sync.refreshFromCloud
+  const refreshPeople = useCallback(async () => {
+    const fresh = await refreshFromCloud(['contacts', 'email_threads'])
+    if (!fresh) return
+    if (fresh.contacts) replaceContacts(fresh.contacts)
+    if (fresh.emailThreads) setEmailThreads(fresh.emailThreads)
+  }, [refreshFromCloud, replaceContacts])
+  const google = useGoogle(settings, { saveSettings, saveGoogleToken, expireGoogleToken, clearGoogleToken, onEmailSynced: refreshPeople })
+
+  // The hourly sync runs while SprintHQ is closed. Coming back to the app
+  // after 15 minutes or more picks up what it found.
+  const lastRefreshRef = useRef(Date.now())
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible' || !google.server?.connected) return
+      if (Date.now() - lastRefreshRef.current < 15 * 60 * 1000) return
+      lastRefreshRef.current = Date.now()
+      refreshPeople()
+      google.refreshServerStatus()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [google.server?.connected, google.refreshServerStatus, refreshPeople])
   const { projects, activeProjects, addProject, updateProject, deleteProject } = useProjects()
   const { invoices, profile: invoiceProfile, saveProfile, saveInvoice } = useInvoices()
   const timer = useTimer((session) => {
@@ -277,7 +303,7 @@ function AppMain({ sync }) {
         return <DoView todayTasks={filterByClient(todayTasks)} top3Tasks={filterByClient(top3Tasks)} missedTasks={filterByClient(missedTasks)} unscheduledTasks={filterByClient(unscheduledTasks)}
           companies={companies} projects={projects} onAdd={openAddTask} onComplete={handleComplete} onUncomplete={uncompleteTask} onEdit={openEditTask} onDelete={deleteTask} onReschedule={rescheduleTask}
           completedToday={completedToday} timer={timer} onToggleTimer={timer.toggle} onToggleSubtask={toggleSubtask} onBreakdown={openBreakdown} onToggleTop3={toggleTop3}
-          reachOutSlot={<ReachOutCard due={dueContacts} companies={companies} demoMode={demoMode}
+          reachOutSlot={<ReachOutCard due={dueContacts} companies={companies} demoMode={demoMode} emailThreads={emailThreads}
             onCompleteTouch={completeTouch} onSnooze={snoozeTouch} onOpenContact={openContact}
             onOpenAll={() => setActiveView('relationships')} />} />
       case 'week':
@@ -310,6 +336,7 @@ function AppMain({ sync }) {
       case 'relationships':
         return <Relationships
           contacts={filterByClient(contacts)} allContacts={contacts} companies={companies} meetings={meetings} tasks={tasks}
+          emailThreads={emailThreads} gmailAccount={google.server?.email || settings.googleEmail}
           demoMode={demoMode} focusContactId={focusContactId} onFocusHandled={() => setFocusContactId(null)}
           userEmail={sync.userEmail} ignore={settings.contactIgnore || []}
           onAdd={addContact} onUpdate={updateContact} onUpdateMany={updateContacts} onDelete={deleteContact}

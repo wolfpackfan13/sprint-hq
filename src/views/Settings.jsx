@@ -1,6 +1,66 @@
 import { useState } from 'react'
-import { Eye, EyeOff, Check, CloudUpload, Link, Unlink, AlertCircle } from 'lucide-react'
+import { Eye, EyeOff, Check, CloudUpload, Link, Unlink, AlertCircle, RefreshCw } from 'lucide-react'
 import { ManageClients } from '../components/ManageClients'
+
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`
+
+function syncedAt(iso) {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const sameDay = d.toDateString() === new Date().toDateString()
+  const time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+  return sameDay ? `today at ${time}` : `${d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} at ${time}`
+}
+
+// The hourly Gmail sync: what it last did, and Sync now.
+function EmailSyncStatus({ google }) {
+  const srv = google.server
+  const last = srv.lastSync
+  const counts = last?.counts || {}
+  const busy = google.syncResult?.status === 'busy'
+  const callFailed = google.syncResult && !['ok', 'busy', 'reauth_needed', 'error'].includes(google.syncResult.status)
+    ? google.syncResult.error : null
+
+  let line, isError = false
+  if (!srv.gmail) {
+    line = 'Off. Gmail was left unticked when Google was connected. Tap Reconnect Google above and tick Gmail.'
+    isError = true
+  } else if (google.syncing) {
+    line = srv.backfillDone ? 'Syncing…' : 'Reading your recent email for the first time. This can take a minute.'
+  } else if (callFailed) {
+    line = callFailed
+    isError = true
+  } else if (!last?.at) {
+    line = 'First sync runs within the hour, or tap Sync now.'
+  } else if (last.status === 'error' || last.status === 'reauth_needed') {
+    line = `Last sync ${syncedAt(last.at)} didn't finish: ${last.error || 'unknown error'}`
+    isError = true
+  } else {
+    const news = [
+      counts.threads ? `${plural(counts.threads, 'thread')} updated` : '',
+      counts.needsReview ? `${counts.needsReview} new in Needs review` : '',
+    ].filter(Boolean).join(' · ')
+    line = `Last synced ${syncedAt(last.at)}${news ? ` · ${news}` : ' · nothing new'}`
+    if (counts.partial) line += '. Still reading older email; it continues next hour.'
+  }
+
+  return (
+    <div className="mt-4 pt-4 border-t border-surface-200">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-navy-900">Email sync</p>
+          <p className="text-xs text-navy-500">Every hour. Reads who, when and subject only, never message text.</p>
+        </div>
+        <button onClick={google.syncNow} disabled={google.syncing || !srv.gmail}
+          className="flex items-center gap-1.5 btn-ghost px-3 py-2 text-sm flex-shrink-0 min-h-[40px] disabled:opacity-50">
+          <RefreshCw size={14} className={google.syncing ? 'animate-spin' : ''} /> {google.syncing ? 'Syncing…' : 'Sync now'}
+        </button>
+      </div>
+      <p className={`text-xs mt-2 ${isError ? 'text-red-600' : 'text-navy-600'}`} aria-live="polite">{line}</p>
+      {busy && <p className="text-xs text-navy-600 mt-1">The hourly sync is already running. Its result shows here when it finishes.</p>}
+    </div>
+  )
+}
 
 export function Settings({ settings, saveSettings, google, onBackup, companies, onAddCompany, onUpdateCompany, onDeleteCompany }) {
   const [googleClientId, setGoogleClientId] = useState(settings.googleClientId || '')
@@ -16,6 +76,12 @@ export function Settings({ settings, saveSettings, google, onBackup, companies, 
   }
 
   const [backupError, setBackupError] = useState(null)
+
+  const srv = google.server || {}
+  const linked = !!settings.googleConnected || !!srv.connected
+  const account = srv.email || settings.googleEmail
+  // Linked the one-hour way while the server sign-in is available.
+  const upgradeAvailable = linked && srv.available && !srv.connected
 
   const handleBackup = async () => {
     setBackupStatus('running')
@@ -45,7 +111,7 @@ export function Settings({ settings, saveSettings, google, onBackup, companies, 
             </div>
             <div>
               <p className="font-display font-semibold text-navy-900">Google Integration</p>
-              <p className="text-xs text-navy-500">Calendar, Drive backup, Gmail scan</p>
+              <p className="text-xs text-navy-500">Calendar, Drive backup, email sync</p>
             </div>
           </div>
 
@@ -70,20 +136,7 @@ export function Settings({ settings, saveSettings, google, onBackup, companies, 
 
           {googleClientId && (
             <div className="flex flex-wrap items-center gap-2">
-              {settings.googleConnected ? (
-                <>
-                  {google.needsRenewal && (
-                    <button onClick={google.renew} disabled={google.signingIn}
-                      className="flex items-center gap-2 px-4 py-2 text-sm btn-primary">
-                      <Link size={14} /> {google.signingIn ? 'Opening…' : 'Refresh Google'}
-                    </button>
-                  )}
-                  <button onClick={google.disconnect}
-                    className="flex items-center gap-2 px-4 py-2 text-sm btn-ghost text-red-500 border-red-200 hover:bg-red-50">
-                    <Unlink size={14} /> Disconnect Google
-                  </button>
-                </>
-              ) : (
+              {(!linked || google.reconnectNeeded || upgradeAvailable) && (
                 <button onClick={() => {
                   // Save the Client ID and open Google's window in this same
                   // tap. A timer here makes phone browsers block the window.
@@ -92,18 +145,43 @@ export function Settings({ settings, saveSettings, google, onBackup, companies, 
                 }}
                   disabled={google.signingIn}
                   className="flex items-center gap-2 px-4 py-2 text-sm btn-primary">
-                  <Link size={14} /> {google.signingIn ? 'Opening…' : 'Connect Google'}
+                  <Link size={14} />
+                  {google.signingIn ? 'Opening…'
+                    : !linked ? 'Connect Google'
+                    : google.reconnectNeeded ? 'Reconnect Google'
+                    : 'Turn on email sync'}
                 </button>
               )}
-              {settings.googleConnected && !google.needsRenewal && (
+              {linked && !srv.connected && !srv.available && google.needsRenewal && (
+                <button onClick={google.renew} disabled={google.signingIn}
+                  className="flex items-center gap-2 px-4 py-2 text-sm btn-primary">
+                  <Link size={14} /> {google.signingIn ? 'Opening…' : 'Refresh Google'}
+                </button>
+              )}
+              {linked && (
+                <button onClick={google.disconnect}
+                  className="flex items-center gap-2 px-4 py-2 text-sm btn-ghost text-red-500 border-red-200 hover:bg-red-50">
+                  <Unlink size={14} /> Disconnect Google
+                </button>
+              )}
+              {linked && !google.needsRenewal && (
                 <span className="flex items-center gap-1 text-xs text-forest-600 font-medium">
-                  <Check size={12} /> Connected{settings.googleEmail ? ` as ${settings.googleEmail}` : ''}
+                  <Check size={12} /> Connected{account ? ` as ${account}` : ''}
                 </span>
               )}
-              {settings.googleConnected && google.needsRenewal && (
+              {linked && google.needsRenewal && !google.reconnectNeeded && (
                 <span className="text-xs text-navy-500">Linked. Sign-ins last an hour; one tap renews it.</span>
               )}
             </div>
+          )}
+
+          {upgradeAvailable && (
+            <p className="mt-2 text-xs text-navy-600">
+              Connect once more to stay signed in to Google on every device, and to sync email to Relationships every hour.
+            </p>
+          )}
+          {srv.connected && !srv.reauth && (
+            <p className="mt-2 text-xs text-navy-600">Stays signed in on every device where you use SprintHQ.</p>
           )}
 
           {google.authError && (
@@ -112,7 +190,9 @@ export function Settings({ settings, saveSettings, google, onBackup, companies, 
             </p>
           )}
 
-          {settings.googleConnected && (
+          {srv.connected && <EmailSyncStatus google={google} />}
+
+          {linked && (
             <div className="mt-4 pt-4 border-t border-surface-200">
               <button
                 onClick={handleBackup}
@@ -139,7 +219,7 @@ export function Settings({ settings, saveSettings, google, onBackup, companies, 
             <span>
               <span className="block font-display font-semibold text-navy-900">Demo mode</span>
               <span className="block text-xs text-navy-600 mt-0.5 leading-relaxed">
-                Hides contacts labeled Personal and masks profile notes, meeting summaries, and next touch reasons.
+                Hides contacts labeled Personal and masks profile notes, meeting summaries, email subjects, and next touch reasons.
                 Names, stages, and dates stay visible. Turns on and off instantly.
               </span>
             </span>
