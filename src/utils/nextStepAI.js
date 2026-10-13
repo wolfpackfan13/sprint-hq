@@ -1,5 +1,5 @@
 import { supabase } from './supabase'
-import { stageOf, referralStageOf, STAGES, REFERRAL_STAGES, whoWroteLast, localDateOf, clientHistoryLabel, hasSigned, firstNameOf } from './relationships'
+import { stageOf, referralStageOf, STAGES, REFERRAL_STAGES, whoWroteLast, localDateOf, clientHistoryLabel, hasSigned, firstNameOf, notesOf } from './relationships'
 import { calUtils } from './dateUtils'
 
 // The AI next step runs in the contact-next-step edge function, which holds
@@ -32,6 +32,10 @@ export function buildBrief(contact, { linkedMeetings = [], linkedThreads = [], o
         ? { date: contact.nextTouchOn, reason: clip(contact.nextTouchReason, 160) } : null,
       referralTerms: clip(contact.referralTerms, 300),
     },
+    // The next step Sam set himself, if any; suggestions should fit with it.
+    samsOwnNextStep: contact.nextStep?.mine?.title ? { title: clip(contact.nextStep.mine.title, 160), by: contact.nextStep.mine.due || '' } : null,
+    // Sam's own notes on them, newest first.
+    notes: notesOf(contact).slice(0, 8).map(n => ({ date: localDateOf(n.at), text: clip(n.text, 400) })),
     booked: booked ? { title: booked.title, start: booked.start, withThem: true } : null,
     meetings: linkedMeetings.slice(0, 6).map(m => ({
       date: m.date, title: clip(m.title, 120), source: m.source || 'manual',

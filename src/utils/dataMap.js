@@ -54,7 +54,7 @@ export const FIELD_MAPS = {
     invitedOn: 'invited_on', partnerSince: 'partner_since',
     rewardAmount: 'reward_amount', rewardPaidOn: 'reward_paid_on',
     clientUntil: 'client_until', otherEmails: 'other_emails',
-    nextTouchEventId: 'next_touch_event_id', nextStep: 'next_step',
+    nextTouchEventId: 'next_touch_event_id', nextStep: 'next_step', notesLog: 'notes_log',
   },
   // Written only by the gmail-sync function (migration 006). Headers only.
   email_threads: {
@@ -151,7 +151,7 @@ export function fromRow(table, row) {
     if (row[dbCol] !== undefined && row[dbCol] !== null) obj[appKey] = row[dbCol]
   }
   // Ensure JSONB array fields default to []
-  const arrayFields = ['subtasks', 'timeEntries', 'resources', 'actionItems', 'tags', 'contactIds', 'participants', 'otherEmails']
+  const arrayFields = ['subtasks', 'timeEntries', 'resources', 'actionItems', 'tags', 'contactIds', 'participants', 'otherEmails', 'notesLog']
   arrayFields.forEach(f => { if (FIELD_MAPS[table][f] && obj[f] == null) obj[f] = [] })
   return obj
 }

@@ -131,6 +131,8 @@ create table if not exists contacts (
   other_emails jsonb not null default '[]'::jsonb,
   next_touch_event_id text,
   next_step jsonb,
+  -- 009: dated notes, newest first: [{ id, at, text }]
+  notes_log jsonb not null default '[]'::jsonb,
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );

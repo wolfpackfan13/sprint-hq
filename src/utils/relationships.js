@@ -462,10 +462,20 @@ export function mergePatch(keep, drop) {
     nextTouchReason: keep.nextTouchEventId ? keep.nextTouchReason : (drop.nextTouchEventId ? drop.nextTouchReason : pick('nextTouchReason') || ''),
     nextTouchEventId: keep.nextTouchEventId || drop.nextTouchEventId || null,
     notes: [...new Set(notes)].join('\n\n'),
+    notesLog: notesOf({ notesLog: [...(keep.notesLog || []), ...(drop.notesLog || [])] }),
     tags: [...new Set([...(keep.tags || []), ...(drop.tags || [])])],
     createdAt: earliest(keep.createdAt, drop.createdAt) || keep.createdAt,
     nextStep: null,
   }
+}
+
+// ── Notes ──
+// Dated notes on a person, newest first, one copy of each.
+export function notesOf(c) {
+  const seen = new Set()
+  return (Array.isArray(c?.notesLog) ? c.notesLog : [])
+    .filter(n => n && n.id && (n.text || '').trim() && !seen.has(n.id) && seen.add(n.id))
+    .sort((a, b) => (b.at || '').localeCompare(a.at || ''))
 }
 
 // ── Next step ──
@@ -494,6 +504,9 @@ export function nextStepBasis(c, { last, openTasks = [], booked, referrals = [] 
     stageOf(c), referralStageOf(c) || '',
     booked?.id || '',
     referrals.filter(hasSigned).length, referrals.length,
+    // A new or edited note is something new too. Left off when there are
+    // none, so suggestions saved before notes existed still count as fresh.
+    ...(notesOf(c).length ? [notesOf(c).slice(0, 3).map(n => `${n.id}:${(n.text || '').length}`).join(',')] : []),
   ].join('|')
 }
 
