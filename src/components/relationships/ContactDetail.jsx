@@ -19,8 +19,16 @@ function MeetingSourceTag({ meeting }) {
   if (meeting.source === 'manual' && !meeting.recordingUrl) {
     return <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded bg-surface-200 text-navy-600">Logged</span>
   }
+  if (meeting.source === 'notion_import') {
+    return <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded bg-surface-200 text-navy-600">From Notion</span>
+  }
   return null
 }
+
+// The Notion import stores the person's People Directory page id (32 hex
+// characters) as source_ref. Circleback and Gmail store their own ids there,
+// which never match this shape.
+const notionPageUrl = (ref) => (/^[0-9a-f]{32}$/.test(ref || '') ? `https://www.notion.so/${ref}` : null)
 
 // Circleback imports link to the meeting page (notes, transcript, recording);
 // anything else is a recording.
@@ -331,6 +339,11 @@ export function ContactDetail({
             {referrer && <div><dt className="text-xs text-navy-600">Referred by</dt><dd><button onClick={() => onOpenContact(referrer.id)} className="text-blue-700">{referrer.name}</button></dd></div>}
             {company && <div><dt className="text-xs text-navy-600">Client / Area</dt><dd>{company.name}</dd></div>}
             {contact.createdAt && <div><dt className="text-xs text-navy-600">Added</dt><dd>{dateUtils.format(contact.createdAt.split('T')[0])}</dd></div>}
+            {notionPageUrl(contact.sourceRef) && (
+              <div><dt className="text-xs text-navy-600">Notion page</dt>
+                <dd><a href={notionPageUrl(contact.sourceRef)} target="_blank" rel="noreferrer" className="text-blue-700">Open archive</a></dd>
+              </div>
+            )}
             {referred.length > 0 && (
               <div className="col-span-2"><dt className="text-xs text-navy-600">Introduced you to</dt>
                 <dd className="flex flex-wrap gap-x-3">{referred.map(r => <button key={r.id} onClick={() => onOpenContact(r.id)} className="text-blue-700">{r.name}</button>)}</dd>
