@@ -166,3 +166,56 @@ begin
     execute format($p$create policy own_all on %I for all using (auth.uid() = user_id) with check (auth.uid() = user_id)$p$, t);
   end loop;
 end $$;
+
+-- ============================================================
+-- Gmail sync (migrations 006 and 007). The hourly schedule and
+-- its Vault secret are in 007; run that file for those.
+-- ============================================================
+
+-- One row per user: the server-held Google key and sync progress.
+-- RLS on with no policies: only the edge functions can read it.
+create table if not exists google_connections (
+  user_id          uuid primary key references auth.users(id) on delete cascade,
+  google_email     text not null,
+  refresh_token    text not null,              -- encrypted by google-auth
+  scopes           text not null default '',
+  client_id        text,
+  connected_at     timestamptz not null default now(),
+  history_id       text,
+  backfill_days    int not null default 90 check (backfill_days between 1 and 730),
+  sync_state       jsonb not null default '{}'::jsonb,
+  sync_started_at  timestamptz,
+  last_sync_at     timestamptz,
+  last_sync_status text check (last_sync_status is null or last_sync_status in ('ok', 'error', 'reauth_needed')),
+  last_sync_error  text,
+  last_sync_counts jsonb not null default '{}'::jsonb,
+  updated_at       timestamptz not null default now()
+);
+alter table google_connections enable row level security;
+revoke all on google_connections from anon, authenticated;
+
+-- One row per Gmail thread with a CRM contact on it. Headers only.
+-- The app can read its own rows; only the edge functions write.
+create table if not exists email_threads (
+  id               text not null,
+  user_id          uuid not null references auth.users(id) on delete cascade,
+  subject          text not null default '',
+  participants     jsonb not null default '[]'::jsonb,
+  contact_ids      jsonb not null default '[]'::jsonb,
+  message_count    int not null default 1,
+  first_message_at timestamptz,
+  last_message_at  timestamptz not null,
+  last_direction   text not null check (last_direction in ('in', 'out')),
+  last_inbound_at  timestamptz,
+  last_outbound_at timestamptz,
+  created_at       timestamptz not null default now(),
+  updated_at       timestamptz not null default now(),
+  primary key (user_id, id),
+  check (id <> '')
+);
+create index if not exists email_threads_recent on email_threads (user_id, last_message_at desc);
+alter table email_threads enable row level security;
+drop policy if exists own_select on email_threads;
+create policy own_select on email_threads for select using (auth.uid() = user_id);
+revoke all on email_threads from anon, authenticated;
+grant select on email_threads to authenticated;

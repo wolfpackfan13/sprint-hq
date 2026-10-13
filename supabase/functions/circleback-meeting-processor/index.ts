@@ -815,13 +815,15 @@ serve(async (req: Request) => {
       for (const f of followUps) {
         const id = contactIdByEmail.get(f.email)
         if (!id) continue
-        const { data, error } = await sb.from("contacts")
-          .update({ next_touch_on: f.date, next_touch_reason: `From call: ${f.reason || mtg.title}`, updated_at: nowIso() })
+        // Ask for a count, not the row. PostgREST re-applies an or= filter
+        // to the rows an update returns, and fails with "column ... does
+        // not exist" when the filter column is not in select().
+        const { count, error } = await sb.from("contacts")
+          .update({ next_touch_on: f.date, next_touch_reason: `From call: ${f.reason || mtg.title}`, updated_at: nowIso() }, { count: "exact" })
           .eq("user_id", userId).eq("id", id)
           .or(`next_touch_on.is.null,next_touch_on.lte.${today}`)
-          .select("id")
         if (error) throw new Error(`next touch update failed: ${error.message}`)
-        crm.next_touches_set += data?.length ?? 0
+        crm.next_touches_set += count ?? 0
       }
 
       // 4. Tasks, last: the one write that is not safe to repeat.
