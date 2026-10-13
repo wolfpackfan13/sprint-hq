@@ -54,7 +54,7 @@ import { ReachOutCard, ToLogCard } from './components/relationships/ReachOutCard
 import {
   contactIdsFromAttendees, hiddenInDemo, contactIdFromLink, nextBookedEvent, toLogItems, reachOutList,
   meetingsForContact, threadsForContact, lastContactDate, mergePatch, firstNameOf, localDateOf, shortDay, stageOf,
-  referralStageOf, lower,
+  referralStageOf, lower, emailsOf, uniqueFirstNames,
 } from './utils/relationships'
 import { calUtils } from './utils/dateUtils'
 
@@ -296,15 +296,33 @@ function AppMain({ sync }) {
   const relEvents = useRelationshipEvents(google)
   const calendarEvents = relEvents.events
 
+  // Your own addresses, so your name in a title ("Sam and Rane connect")
+  // and your place on an invite never point at a contact.
+  const selfEmails = useMemo(() => [...new Set([google.server?.email, settings.googleEmail, sync.userEmail]
+    .map(lower).filter(Boolean))], [google.server?.email, settings.googleEmail, sync.userEmail])
+  const uniqueFirst = useMemo(() => uniqueFirstNames(contacts, selfEmails), [contacts, selfEmails])
+
   // The next event with each person. Until the calendar has been read, the
   // copy saved on the contact stands in.
   const bookedById = useMemo(() => {
     const map = {}
     if (calendarEvents) {
+      // Addresses on sorted people, and people still in Needs review by address.
+      const known = new Set(contacts.filter(c => stageOf(c) !== 'needs_review').flatMap(emailsOf))
+      const inReview = new Map(contacts.filter(c => stageOf(c) === 'needs_review').flatMap(c => emailsOf(c).map(e => [e, c.id])))
       contacts.forEach(c => {
         if (stageOf(c) === 'needs_review') return
-        const ev = nextBookedEvent(c, calendarEvents)
-        if (ev) map[c.id] = ev
+        const ev = nextBookedEvent(c, calendarEvents, { uniqueFirst })
+        if (!ev) return
+        // Found by name, not address. If the invite went to one other
+        // address, offer to save it to this person, or to merge with the
+        // Needs review record that already has it.
+        const attendees = (ev.attendees || []).map(lower)
+        const mine = emailsOf(c)
+        const others = attendees.filter(e => e && !selfEmails.includes(e) && e !== lower(ev.selfEmail) && !known.has(e))
+        if (attendees.some(e => mine.includes(e)) || others.length !== 1) { map[c.id] = ev; return }
+        const reviewId = inReview.get(others[0])
+        map[c.id] = reviewId ? { ...ev, suggestEmail: others[0], suggestMergeId: reviewId } : { ...ev, suggestEmail: others[0] }
       })
     } else {
       const today = calUtils.localToday()
@@ -315,7 +333,7 @@ function AppMain({ sync }) {
       })
     }
     return map
-  }, [contacts, calendarEvents])
+  }, [contacts, calendarEvents, uniqueFirst, selfEmails])
 
   // Keep the saved copy in step with the calendar, so lists sort by it on
   // other devices and before the calendar loads. Events beyond the window
@@ -326,7 +344,7 @@ function AppMain({ sync }) {
     const patches = []
     contacts.forEach(c => {
       if (stageOf(c) === 'needs_review') return
-      const ev = nextBookedEvent(c, calendarEvents)
+      const ev = nextBookedEvent(c, calendarEvents, { uniqueFirst })
       if (ev) {
         const on = localDateOf(ev.start)
         const reason = ev.title || ''
@@ -342,7 +360,7 @@ function AppMain({ sync }) {
     // while; this runs again with the fresh copy.
     if (Date.now() - lastPullRef.current > 10 * 60 * 1000) { refreshPeople(); return }
     updateContacts(patches)
-  }, [calendarEvents, relEvents.complete, contacts, updateContacts, refreshPeople])
+  }, [calendarEvents, relEvents.complete, contacts, uniqueFirst, updateContacts, refreshPeople])
 
   // Meetings with a lead, client or partner that have no notes yet.
   const toLogDismissed = settings.toLogDismissed || []

@@ -64,6 +64,7 @@ function mapEvent(ev) {
     // Relationships: skip standing meetings and ones you declined.
     recurring: !!ev.recurringEventId,
     selfStatus: (ev.attendees || []).find(a => a.self)?.responseStatus || null,
+    selfEmail: (ev.attendees || []).find(a => a.self)?.email || '',
     meetLink: ev.hangoutLink || '',
     // Only events you organize can be moved from SprintHQ.
     organizerSelf: !!ev.organizer?.self,

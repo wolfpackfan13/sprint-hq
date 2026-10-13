@@ -259,15 +259,46 @@ export function openTasksForContact(contact, linkedMeetings = [], tasks = []) {
 }
 
 // ── Calendar ──
-// Whether a calendar event is with (or about) this person: they are on the
-// invite, or it is a reminder SprintHQ made, which carries a link to them.
-export function eventIsAbout(ev, c) {
-  if (!ev || !c) return false
-  if (c.nextTouchEventId && ev.id === c.nextTouchEventId) return true
-  const emails = emailsOf(c)
-  if ((ev.attendees || []).some(a => emails.includes(lower(a)))) return true
-  return (ev.description || '').includes(`#contact=${encodeURIComponent(c.id)}`)
+// Whole-word, case-insensitive: "Rane" is in "Sam and Rane connect" but
+// not in "Ranelagh".
+const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+const titleHasName = (title, name) => {
+  const n = lower(name).replace(/\s+/g, ' ')
+  if (!n) return false
+  return new RegExp(`(^|[^\\p{L}])${escapeRe(n)}($|[^\\p{L}])`, 'iu').test(title || '')
 }
+
+// First names that only one person has, so a title like "Lunch with Rane"
+// can point to them. Your own first name is left out, since most titles
+// carry it ("Sam and Rane connect").
+export function uniqueFirstNames(contacts = [], selfEmails = []) {
+  const self = new Set(selfEmails.map(e => lower(e).split('@')[0].split(/[._+-]/)[0]).filter(Boolean))
+  const counts = new Map()
+  contacts.forEach(c => {
+    if (stageOf(c) === 'needs_review') return
+    const first = lower(firstNameOf(c))
+    if (first && first !== 'them') counts.set(first, (counts.get(first) || 0) + 1)
+  })
+  return new Set([...counts].filter(([n, k]) => k === 1 && n.length >= 3 && !self.has(n)).map(([n]) => n))
+}
+
+// How a calendar event is tied to this person, or null: the event SprintHQ
+// saved for them, they're on the invite, it carries their #contact link
+// (reminders SprintHQ makes), or the title names them (their full name, or
+// a first name nobody else has).
+export function eventMatch(ev, c, { uniqueFirst } = {}) {
+  if (!ev || !c) return null
+  if (c.nextTouchEventId && ev.id === c.nextTouchEventId) return 'saved'
+  const emails = emailsOf(c)
+  if ((ev.attendees || []).some(a => emails.includes(lower(a)))) return 'email'
+  if ((ev.description || '').includes(`#contact=${encodeURIComponent(c.id)}`)) return 'link'
+  const name = (c.name || '').trim()
+  if (name.includes(' ') && titleHasName(ev.title, name)) return 'title'
+  const first = lower(firstNameOf(c))
+  if (uniqueFirst && uniqueFirst.has(first) && titleHasName(ev.title, first)) return 'title'
+  return null
+}
+export const eventIsAbout = (ev, c, opts) => !!eventMatch(ev, c, opts)
 
 const startMs = (ev) => {
   const s = ev?.start || ''
@@ -278,11 +309,17 @@ const endMs = (ev) => {
   return Date.parse(s.includes('T') ? s : `${s}T23:59:59`)
 }
 
-// The next thing on the calendar with this person, or null.
-export function nextBookedEvent(c, events = [], now = Date.now()) {
-  return events
-    .filter(ev => ev.selfStatus !== 'declined' && endMs(ev) >= now && eventIsAbout(ev, c))
-    .sort((a, b) => startMs(a) - startMs(b))[0] || null
+// The next thing on the calendar with this person, or null. The event comes
+// back with matchedBy saying how it was tied to them.
+export function nextBookedEvent(c, events = [], { now = Date.now(), uniqueFirst } = {}) {
+  let best = null
+  let how = null
+  for (const ev of events) {
+    if (ev.selfStatus === 'declined' || endMs(ev) < now) continue
+    const m = eventMatch(ev, c, { uniqueFirst })
+    if (m && (!best || startMs(ev) < startMs(best))) { best = ev; how = m }
+  }
+  return best ? { ...best, matchedBy: how } : null
 }
 
 const TO_LOG_AFTER_MS = 2 * 60 * 60 * 1000
@@ -432,6 +469,22 @@ export function mergePatch(keep, drop) {
 }
 
 // ── Next step ──
+// Whether two task titles say the same thing ("Log notes from lunch with
+// Rane" and "Log notes from lunch with Rane Gretsch"): one's words contain
+// the other's, or most of them overlap. Small words don't count.
+const SMALL_WORDS = new Set(['a', 'an', 'the', 'to', 'for', 'with', 'from', 'and', 'of', 'on', 'in', 'about', 'his', 'her', 'their', 'your', 'my'])
+const wordsOf = (s) => new Set(lower(s).replace(/[^\p{L}\p{N}\s]/gu, ' ').split(/\s+/).filter(w => w && !SMALL_WORDS.has(w)))
+export function sameTaskTitle(a, b) {
+  const A = wordsOf(a), B = wordsOf(b)
+  if (!A.size || !B.size) return false
+  let both = 0
+  A.forEach(w => { if (B.has(w)) both++ })
+  return both === Math.min(A.size, B.size) || both / (A.size + B.size - both) >= 0.6
+}
+
+// A task about writing up a meeting ("Log notes from lunch with Rane").
+export const isNotesTask = (title) => /\b(log|add|write|capture|record|upload|send)\b.{0,30}\bnotes?\b/i.test(title || '')
+
 // What the AI next step was built from. When this changes (a new meeting,
 // email, finished task, stage change, booking), the suggestion refreshes.
 export function nextStepBasis(c, { last, openTasks = [], booked, referrals = [] } = {}) {
