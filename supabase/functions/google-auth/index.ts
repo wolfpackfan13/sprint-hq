@@ -26,7 +26,9 @@
 //                         connecting Google once more.
 //   ALLOWED_ORIGINS       extra comma-separated origins, e.g. a custom domain
 //
-// Deploy with "Verify JWT" on. Requires migrations 006 and 007.
+// Deployed as Google-auth (the app calls that exact name; function names
+// are case-sensitive). Deploy with "Verify JWT" on. Requires migrations
+// 006 and 007.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
 

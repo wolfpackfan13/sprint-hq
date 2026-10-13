@@ -96,6 +96,12 @@ async function invokeFn(name, body) {
   }
 }
 
+// The edge functions' names as deployed in Supabase. Function addresses are
+// case-sensitive; the code lives in supabase/functions/google-auth and
+// supabase/functions/gmail-sync.
+const AUTH_FN = 'Google-auth'
+const SYNC_FN = 'Gmail-sync'
+
 const UNAVAILABLE = ['not_deployed', 'not_migrated']
 
 function serverFromStatus(d) {
@@ -148,7 +154,7 @@ export function useGoogle(settings, { saveSettings, saveGoogleToken, expireGoogl
 
   // ── Server connection ─────────────────────────────────────
   const refreshServerStatus = useCallback(async () => {
-    const r = await invokeFn('google-auth', { action: 'status' })
+    const r = await invokeFn(AUTH_FN, { action: 'status' })
     if (r.ok) {
       const st = serverFromStatus(r.data)
       setServer(st)
@@ -169,7 +175,7 @@ export function useGoogle(settings, { saveSettings, saveGoogleToken, expireGoogl
   const getServerToken = useCallback(() => {
     if (tokenPromiseRef.current) return tokenPromiseRef.current
     const p = (async () => {
-      const r = await invokeFn('google-auth', { action: 'token' })
+      const r = await invokeFn(AUTH_FN, { action: 'token' })
       if (r.ok && r.data?.accessToken) {
         saveGoogleToken(r.data.accessToken, r.data.expiresIn)
         settingsRef.current = {
@@ -208,7 +214,7 @@ export function useGoogle(settings, { saveSettings, saveGoogleToken, expireGoogl
   const syncNow = useCallback(async () => {
     setSyncing(true)
     setSyncResult(null)
-    const r = await invokeFn('gmail-sync', {})
+    const r = await invokeFn(SYNC_FN, {})
     setSyncing(false)
     setSyncResult(r.ok ? r.data : { status: r.code, error: r.error })
     await refreshServerStatus()
@@ -321,7 +327,7 @@ export function useGoogle(settings, { saveSettings, saveGoogleToken, expireGoogl
             setAuthError(describeSignInError(resp.error))
             return
           }
-          const r = await invokeFn('google-auth', { action: 'connect', code: resp.code, clientId: id })
+          const r = await invokeFn(AUTH_FN, { action: 'connect', code: resp.code, clientId: id })
           setSigningIn(false)
           if (!r.ok) {
             // Google's earlier approval was cleared to get a key; the old
@@ -376,7 +382,7 @@ export function useGoogle(settings, { saveSettings, saveGoogleToken, expireGoogl
   const disconnect = useCallback(async () => {
     if (serverRef.current.connected) {
       // Revokes the stored key with Google, which also ends this pass.
-      await invokeFn('google-auth', { action: 'disconnect' })
+      await invokeFn(AUTH_FN, { action: 'disconnect' })
     } else {
       const token = settingsRef.current.googleToken
       if (window.google?.accounts?.oauth2 && token) window.google.accounts.oauth2.revoke(token)

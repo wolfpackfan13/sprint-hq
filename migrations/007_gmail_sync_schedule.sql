@@ -9,7 +9,9 @@
 --    and gmail-sync only syncs every account for a caller that has
 --    it. The last statement prints it: copy it into Supabase →
 --    Edge Functions → Secrets as GMAIL_SYNC_SECRET.
--- 3. gmail-sync is scheduled at 17 minutes past every hour.
+-- 3. gmail-sync is scheduled at 17 minutes past every hour. It is
+--    deployed in Supabase as Gmail-sync (function names are
+--    case-sensitive in the URL).
 --
 -- Run in the Supabase SQL editor after 006. Safe to run before the
 -- functions are deployed: until then the hourly call gets a 404
@@ -49,7 +51,7 @@ select cron.schedule(
   '17 * * * *',
   $job$
   select net.http_post(
-    url := 'https://vrxwlcdbxfizyyaitfcx.supabase.co/functions/v1/gmail-sync',
+    url := 'https://vrxwlcdbxfizyyaitfcx.supabase.co/functions/v1/Gmail-sync',
     headers := jsonb_build_object(
       'Content-Type', 'application/json',
       'x-sync-secret', (select decrypted_secret from vault.decrypted_secrets where name = 'gmail_sync_secret')

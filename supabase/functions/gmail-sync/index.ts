@@ -38,8 +38,10 @@
 //   SELF_EMAILS           other addresses that are you, comma-separated
 //   SAM_TIME_ZONE         for last contact dates (default America/New_York)
 //
-// Deploy with "Verify JWT" OFF: the schedule has no user token. This
-// function checks every caller itself. Requires migrations 006 and 007.
+// Deployed as Gmail-sync (the app and the schedule call that exact name;
+// function names are case-sensitive). Deploy with "Verify JWT" OFF: the
+// schedule has no user token. This function checks every caller itself.
+// Requires migrations 006 and 007.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
 
