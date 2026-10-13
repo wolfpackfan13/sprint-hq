@@ -469,6 +469,22 @@ export function mergePatch(keep, drop) {
 }
 
 // ── Next step ──
+// Whether two task titles say the same thing ("Log notes from lunch with
+// Rane" and "Log notes from lunch with Rane Gretsch"): one's words contain
+// the other's, or most of them overlap. Small words don't count.
+const SMALL_WORDS = new Set(['a', 'an', 'the', 'to', 'for', 'with', 'from', 'and', 'of', 'on', 'in', 'about', 'his', 'her', 'their', 'your', 'my'])
+const wordsOf = (s) => new Set(lower(s).replace(/[^\p{L}\p{N}\s]/gu, ' ').split(/\s+/).filter(w => w && !SMALL_WORDS.has(w)))
+export function sameTaskTitle(a, b) {
+  const A = wordsOf(a), B = wordsOf(b)
+  if (!A.size || !B.size) return false
+  let both = 0
+  A.forEach(w => { if (B.has(w)) both++ })
+  return both === Math.min(A.size, B.size) || both / (A.size + B.size - both) >= 0.6
+}
+
+// A task about writing up a meeting ("Log notes from lunch with Rane").
+export const isNotesTask = (title) => /\b(log|add|write|capture|record|upload|send)\b.{0,30}\bnotes?\b/i.test(title || '')
+
 // What the AI next step was built from. When this changes (a new meeting,
 // email, finished task, stage change, booking), the suggestion refreshes.
 export function nextStepBasis(c, { last, openTasks = [], booked, referrals = [] } = {}) {

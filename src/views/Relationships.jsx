@@ -14,7 +14,7 @@ import {
   stageOf, segmentOf, referralStageOf, tabsFor, meetingsForContact,
   lastContactDate, openTasksForContact, companyNameFor, sortContacts, hiddenInDemo,
   threadsForContact, lastTouch, referralsOf, allRewardsOwed, duplicatesOf, notSameKey,
-  nextStepBasis, shortDay, localDateOf, firstNameOf, money,
+  nextStepBasis, shortDay, localDateOf, firstNameOf, money, sameTaskTitle, isNotesTask,
 } from '../utils/relationships'
 import { buildBrief, fetchNextStep } from '../utils/nextStepAI'
 import { dateUtils, calUtils } from '../utils/dateUtils'
@@ -281,9 +281,18 @@ export function Relationships({
   const anotherStep = (c, title) => {
     const ns = c.nextStep
     const dismissed = [...new Set([...(ns?.dismissed || []), title])]
-    const left = (ns?.steps || []).filter(s => !dismissed.includes(s.title))
-    if (ns && left.length) onUpdate(c.id, { nextStep: { ...ns, dismissed } })
+    const open = openTasksById[c.id] || []
+    const left = (ns?.steps || []).filter(s => !dismissed.includes(s.title) && !open.some(t => sameTaskTitle(t.title, s.title)))
+    if (ns && left.length && ns.basis === basisFor(c)) onUpdate(c.id, { nextStep: { ...ns, dismissed } })
     else requestStep(c, { force: true, dismissed })
+  }
+
+  // A step you acted on (task added, Gmail opened) is done as a suggestion:
+  // it's left out from now on, and the AI is told not to repeat it.
+  const usedStep = (c, title) => {
+    const ns = c.nextStep
+    if (!ns || !title) return
+    onUpdate(c.id, { nextStep: { ...ns, dismissed: [...new Set([...(ns.dismissed || []), title])] } })
   }
 
   // ── actions ──
@@ -399,11 +408,21 @@ export function Relationships({
 
     const first = (linked[0]?.name || linked[0]?.email || '').split(' ')[0]
     const others = linked.length - 1
-    showToast?.({
-      message: `${existing ? 'Updated' : 'Logged'} with ${first}${others > 0 ? ` and ${others} other${others === 1 ? '' : 's'}` : ''}`
-        + (created.length ? ` · ${created.length} added to Needs review` : ''),
-      duration: 4000,
-    })
+    const said = `${existing ? 'Updated' : 'Logged'} with ${first}${others > 0 ? ` and ${others} other${others === 1 ? '' : 's'}` : ''}`
+      + (created.length ? ` · ${created.length} added to Needs review` : '')
+    // A "Log notes from…" task for these people is what this just did.
+    const notesTasks = [...new Map(linked.flatMap(c => openTasksById[c.id] || []).filter(t => isNotesTask(t.title)).map(t => [t.id, t])).values()]
+    if (notesTasks.length) {
+      showToast?.({
+        message: `${said}. Mark "${notesTasks[0].title}"${notesTasks.length > 1 ? ` and ${notesTasks.length - 1} more` : ''} done?`,
+        actionLabel: 'Mark done',
+        duration: 9000,
+        // After this toast closes, so "Task completed · Undo" can show.
+        undo: () => setTimeout(() => notesTasks.forEach(t => onCompleteTask(t.id)), 0),
+      })
+    } else {
+      showToast?.({ message: said, duration: 4000 })
+    }
     setLog(null)
   }
 
@@ -487,6 +506,8 @@ export function Relationships({
       booked={bookedById[contact.id] || null}
       duplicates={duplicatesOf(contact, people, { notSame })}
       aiState={aiState[contact.id]}
+      aiFresh={!contact.nextStep || contact.nextStep.basis === basisFor(contact)}
+      onUsedStep={(title) => usedStep(contact, title)}
       onBack={withBack ? () => setMobileDetail(false) : null}
       onEdit={() => setForm({ contact })}
       onStageChange={(s) => handleStageChange(contact, s)}

@@ -8,7 +8,7 @@ import {
   STAGES, BUSINESS_STAGES, REFERRAL_STAGES, NETWORK_LABELS, SOURCES, DEMO_MASK,
   stageOf, segmentOf, referralStageOf, isPartner, meetingBlurb, lastContactDate, localDateOf, firstNameOf,
   gmailThreadUrl, gmailComposeUrl, historyItems, whoWroteLast, clientHistoryLabel, rewardsOwed, hasSigned,
-  money, timeRange, fallbackStep, fallbackSummary, lastTouch, emailsOf, shortDay, lower,
+  money, timeRange, fallbackStep, fallbackSummary, lastTouch, emailsOf, shortDay, lower, sameTaskTitle,
 } from '../../utils/relationships'
 import { isCirclebackUrl } from '../../utils/circleback'
 import { safeUrl } from '../../utils/safeUrl'
@@ -279,17 +279,19 @@ function ReferralsBody({ contact, referrals, demoMode, onUpdate, onSetReward, on
 const btnPrimary = 'btn-primary min-h-[46px] px-4 text-sm font-display font-semibold flex items-center justify-center gap-1.5'
 const btnSecondary = 'min-h-[46px] px-4 rounded-[10px] border border-[#F5D9A0] bg-white text-navy-800 text-sm font-display font-semibold flex items-center justify-center gap-1.5 hover:bg-surface-100'
 
-function StepAction({ step, contact, firstName, gmailAccount, onSchedule, onAddTask, onInvite, primary = true, small = false }) {
+// onUsed: the step was acted on (task added, Gmail opened), so it can make
+// way for the next one.
+function StepAction({ step, contact, firstName, gmailAccount, onSchedule, onAddTask, onInvite, onUsed = () => {}, primary = true, small = false }) {
   const cls = small
     ? 'min-h-[36px] px-3 rounded-lg bg-[#FEF6E4] text-[#7A4E00] text-[13px] font-semibold flex-shrink-0'
     : `${primary ? btnPrimary : btnSecondary} flex-[3]`
   if (step.kind === 'email') {
     const href = step.threadId ? gmailThreadUrl(step.threadId, gmailAccount)
       : gmailComposeUrl({ to: contact.email || '', subject: '', body: '', account: gmailAccount })
-    return <a href={href} target="_blank" rel="noreferrer" className={`${cls} no-underline`}>{!small && <Mail size={15} />}Open in Gmail</a>
+    return <a href={href} target="_blank" rel="noreferrer" onClick={() => onUsed(step.title)} className={`${cls} no-underline`}>{!small && <Mail size={15} />}Open in Gmail</a>
   }
   if (step.kind === 'task') {
-    return <button onClick={() => onAddTask({ title: step.title, dueDate: step.dueInDays ? calUtils.addDays(calUtils.localToday(), step.dueInDays) : '' })} className={cls}>{!small && <Plus size={15} />}{small ? 'Add task' : 'Add as task'}</button>
+    return <button onClick={() => { onAddTask({ title: step.title, dueDate: step.dueInDays ? calUtils.addDays(calUtils.localToday(), step.dueInDays) : '' }); onUsed(step.title) }} className={cls}>{!small && <Plus size={15} />}{small ? 'Add task' : 'Add as task'}</button>
   }
   if (step.kind === 'invite') {
     return <button onClick={onInvite} className={cls}>{!small && <Gift size={15} />}Invite as partner</button>
@@ -300,17 +302,19 @@ function StepAction({ step, contact, firstName, gmailAccount, onSchedule, onAddT
 function NextStepCard({
   contact, firstName, toLog, overdueTask, owed, booked, ai, aiState, last, gmailAccount, demoMode, contactsById,
   onLog, onDismissToLog, onCompleteTask, onEditTask, onSetReward, onMarkPaid, onSchedule, onAddTask, onInvite,
-  onRefresh, onAnother, onQuietAddTask, openTasks = [], contacts = [], onUpdate, onMerge,
+  onRefresh, onAnother, onQuietAddTask, openTasks = [], contacts = [], onUpdate, onMerge, aiFresh = true, onUsedStep,
 }) {
   const [rewardAmount, setRewardAmount] = useState('')
   const mask = (t) => (demoMode && t ? DEMO_MASK : t)
-  // A suggested task that's already on the list isn't a new idea.
-  const taskTitles = new Set(openTasks.map(t => lower(t.title)))
-  const aiSteps = (ai?.steps || []).filter(s => s && s.title && !(ai.dismissed || []).includes(s.title)
-    && !(s.kind === 'task' && taskTitles.has(lower(s.title))))
+  // A suggestion built before the latest change (a task added, notes
+  // logged) is out of date: show the rule-based one until the new one comes.
+  const aiNow = aiFresh ? ai : null
+  // Anything already on their task list isn't a new idea.
+  const aiSteps = (aiNow?.steps || []).filter(s => s && s.title && !(aiNow.dismissed || []).includes(s.title)
+    && !openTasks.some(t => sameTaskTitle(t.title, s.title)))
   const suggestion = aiSteps[0] || fallbackStep(contact, { last, firstName })
   const prep = aiSteps.find(s => s.kind !== 'schedule')
-  const summary = ai?.summary || fallbackSummary(contact, { last, firstName })
+  const summary = aiNow?.summary || fallbackSummary(contact, { last, firstName })
   const partnerOwed = owed[0]
 
   // Highest first: notes to add, an overdue task, a reward owed, the booked
@@ -329,7 +333,7 @@ function NextStepCard({
     task: { icon: <AlertCircle size={14} />, text: 'Overdue task' },
     reward: { icon: <Gift size={14} />, text: 'Reward owed' },
     booked: { icon: <CalendarDays size={14} />, text: 'Next step · booked' },
-    suggest: { icon: <Sparkles size={14} />, text: ai?.steps ? 'Suggested next step' : 'Next step' },
+    suggest: { icon: <Sparkles size={14} />, text: aiSteps.length ? 'Suggested next step' : 'Next step' },
   }[current.mode]
   const referralTag = current.mode === 'reward' || (current.mode === 'suggest' && current.step.kind === 'invite')
   const canRefresh = current.mode === 'suggest' || current.mode === 'booked'
@@ -456,7 +460,7 @@ function NextStepCard({
             <div className="flex gap-2.5 items-center rounded-[10px] bg-white border border-[#FBE3B4] pl-3 pr-1.5 py-2">
               <Sparkles size={15} className="text-[#A86800] flex-shrink-0" />
               <span className="flex-1 min-w-0 text-[13px] text-navy-800">{mask(prep.title)}</span>
-              <StepAction step={prep} contact={contact} firstName={firstName} gmailAccount={gmailAccount} onSchedule={onSchedule} onAddTask={onAddTask} onInvite={onInvite} small />
+              <StepAction step={prep} contact={contact} firstName={firstName} gmailAccount={gmailAccount} onSchedule={onSchedule} onAddTask={onAddTask} onInvite={onInvite} onUsed={onUsedStep} small />
             </div>
           )}
         </>
@@ -465,9 +469,9 @@ function NextStepCard({
       {current.mode === 'suggest' && (
         <>
           <h2 className="font-display font-bold text-navy-900 text-xl md:text-[22px] leading-snug">{mask(current.step.title)}</h2>
-          <p className="text-sm text-navy-700 leading-relaxed">{mask(ai?.summary ? summary : (current.step.why || summary))}</p>
+          <p className="text-sm text-navy-700 leading-relaxed">{mask(aiNow?.summary ? summary : (current.step.why || summary))}</p>
           <div className="flex gap-2 pt-0.5">
-            <StepAction step={current.step} contact={contact} firstName={firstName} gmailAccount={gmailAccount} onSchedule={onSchedule} onAddTask={onAddTask} onInvite={onInvite} />
+            <StepAction step={current.step} contact={contact} firstName={firstName} gmailAccount={gmailAccount} onSchedule={onSchedule} onAddTask={onAddTask} onInvite={onInvite} onUsed={onUsedStep} />
             <button onClick={() => onAnother(current.step.title)} disabled={aiState?.loading} className={`${btnSecondary} flex-[2] disabled:opacity-60`}>Another idea</button>
           </div>
           {aiState?.error && <p className="text-xs text-[#7A4E00]">{aiState.error}</p>}
@@ -498,6 +502,7 @@ export function ContactDetail({
   onBack, onEdit, onStageChange, onReferralStageChange, onConvert, onMerge, onNotSame,
   onLog, onDismissToLog, onSchedule, onInvite, onAddTask, onCompleteTask, onEditTask,
   onOpenContact, onOpenClient, onUpdate, onSetReward, onMarkPaid, onRefreshStep, onAnotherStep,
+  aiFresh = true, onUsedStep = () => {},
 }) {
   const stage = stageOf(contact)
   const segment = segmentOf(contact)
@@ -633,6 +638,7 @@ export function ContactDetail({
           onSetReward={onSetReward} onMarkPaid={onMarkPaid} onSchedule={onSchedule} onAddTask={onAddTask} onInvite={onInvite}
           onRefresh={onRefreshStep} onAnother={onAnotherStep} onQuietAddTask={openAddTask}
           openTasks={openTasks} contacts={contacts} onUpdate={onUpdate} onMerge={onMerge}
+          aiFresh={aiFresh} onUsedStep={onUsedStep}
         />
 
         {/* Everything else, folded */}
