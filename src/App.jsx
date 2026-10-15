@@ -296,6 +296,22 @@ function AppMain({ sync }) {
   const relEvents = useRelationshipEvents(google)
   const calendarEvents = relEvents.events
 
+  // A clock for "is this meeting over yet", so booked meetings drop off when
+  // they end instead of when the calendar next reloads.
+  const [nowTick, setNowTick] = useState(() => Date.now())
+  useEffect(() => {
+    const t = setInterval(() => setNowTick(Date.now()), 60 * 1000)
+    return () => clearInterval(t)
+  }, [])
+
+  // Notes already logged: by calendar event, and by person and day.
+  const loggedEventIds = useMemo(() => new Set(meetings.map(m => m.calendarEventId).filter(Boolean)), [meetings])
+  const loggedDaysById = useMemo(() => {
+    const map = {}
+    contacts.forEach(c => { map[c.id] = new Set(meetingsForContact(c, meetings).map(m => m.date).filter(Boolean)) })
+    return map
+  }, [contacts, meetings])
+
   // Your own addresses, so your name in a title ("Sam and Rane connect")
   // and your place on an invite never point at a contact.
   const selfEmails = useMemo(() => [...new Set([google.server?.email, settings.googleEmail, sync.userEmail]
@@ -312,7 +328,7 @@ function AppMain({ sync }) {
       const inReview = new Map(contacts.filter(c => stageOf(c) === 'needs_review').flatMap(c => emailsOf(c).map(e => [e, c.id])))
       contacts.forEach(c => {
         if (stageOf(c) === 'needs_review') return
-        const ev = nextBookedEvent(c, calendarEvents, { uniqueFirst })
+        const ev = nextBookedEvent(c, calendarEvents, { uniqueFirst, now: nowTick, loggedEventIds, loggedDays: loggedDaysById[c.id] })
         if (!ev) return
         // Found by name, not address. If the invite went to one other
         // address, offer to save it to this person, or to merge with the
@@ -333,7 +349,7 @@ function AppMain({ sync }) {
       })
     }
     return map
-  }, [contacts, calendarEvents, uniqueFirst, selfEmails])
+  }, [contacts, calendarEvents, uniqueFirst, selfEmails, nowTick, loggedEventIds, loggedDaysById])
 
   // Keep the saved copy in step with the calendar, so lists sort by it on
   // other devices and before the calendar loads. Events beyond the window
@@ -344,7 +360,7 @@ function AppMain({ sync }) {
     const patches = []
     contacts.forEach(c => {
       if (stageOf(c) === 'needs_review') return
-      const ev = nextBookedEvent(c, calendarEvents, { uniqueFirst })
+      const ev = bookedById[c.id]
       if (ev) {
         const on = localDateOf(ev.start)
         const reason = ev.title || ''
@@ -360,15 +376,15 @@ function AppMain({ sync }) {
     // while; this runs again with the fresh copy.
     if (Date.now() - lastPullRef.current > 10 * 60 * 1000) { refreshPeople(); return }
     updateContacts(patches)
-  }, [calendarEvents, relEvents.complete, contacts, uniqueFirst, updateContacts, refreshPeople])
+  }, [calendarEvents, relEvents.complete, contacts, bookedById, updateContacts, refreshPeople])
 
   // Meetings with a lead, client or partner that have no notes yet.
   const toLogDismissed = settings.toLogDismissed || []
   const toLog = useMemo(() => {
     if (!calendarEvents) return []
     const people = contacts.filter(c => !hiddenInDemo(c, demoMode))
-    return toLogItems(calendarEvents, people, meetings, { dismissed: toLogDismissed })
-  }, [calendarEvents, contacts, meetings, toLogDismissed, demoMode])
+    return toLogItems(calendarEvents, people, meetings, { dismissed: toLogDismissed, now: nowTick })
+  }, [calendarEvents, contacts, meetings, toLogDismissed, demoMode, nowTick])
   const toLogByContact = useMemo(() => {
     const map = {}
     toLog.forEach(item => item.contactIds.forEach(id => { (map[id] = map[id] || []).push(item) }))

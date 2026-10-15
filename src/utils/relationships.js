@@ -311,11 +311,17 @@ const endMs = (ev) => {
 
 // The next thing on the calendar with this person, or null. The event comes
 // back with matchedBy saying how it was tied to them.
-export function nextBookedEvent(c, events = [], { now = Date.now(), uniqueFirst } = {}) {
+//
+// A meeting that has started and already has notes logged (for that event,
+// or with this person that day) is over, even if the calendar block runs
+// longer, so it no longer counts as booked.
+export function nextBookedEvent(c, events = [], { now = Date.now(), uniqueFirst, loggedDays, loggedEventIds } = {}) {
   let best = null
   let how = null
   for (const ev of events) {
     if (ev.selfStatus === 'declined' || endMs(ev) < now) continue
+    if (loggedEventIds && loggedEventIds.has(ev.id)) continue
+    if (loggedDays && startMs(ev) <= now && loggedDays.has(localDateOf(ev.start))) continue
     const m = eventMatch(ev, c, { uniqueFirst })
     if (m && (!best || startMs(ev) < startMs(best))) { best = ev; how = m }
   }
