@@ -47,6 +47,7 @@ export const SOURCES = {
   event: 'Event',
   content: 'Content',
   circleback: 'Circleback',
+  fathom: 'Fathom',
   gmail: 'Gmail',
   notion_import: 'Notion import',
   other: 'Other',
@@ -206,7 +207,8 @@ export function gmailComposeUrl({ to = '', subject = '', body = '', account = ''
 }
 
 // ── Last contact and history ──
-// The newest conversation of any kind: a meeting (Circleback or logged) or
+// The newest conversation of any kind: a meeting (Circleback, Fathom or
+// logged) or
 // an email thread. Returns { kind, date, meeting?, thread? } or null.
 export function lastTouch(linkedMeetings = [], linkedThreads = []) {
   const m = linkedMeetings[0]
@@ -242,14 +244,18 @@ export function whoWroteLast(thread, firstName) {
 
 // ── Tasks ──
 // Open tasks for this person: added from their page, plus action items
-// from their meetings (pushed to tasks, or Circleback tasks tagged with
-// the meeting's external id).
+// from their meetings (pushed to tasks, or notetaker tasks tagged with
+// the meeting's external id: [circleback:<id>], or [fathom:<recording id>]
+// where the external id already reads fathom:<recording id>).
+export const meetingTaskTag = (externalId) =>
+  String(externalId).startsWith('fathom:') ? `[${externalId}]` : `[circleback:${externalId}]`
+
 export function openTasksForContact(contact, linkedMeetings = [], tasks = []) {
   const ids = new Set()
   const tags = []
   linkedMeetings.forEach(m => {
     ;(m.actionItems || []).forEach(ai => { if (ai.taskId) ids.add(ai.taskId) })
-    if (m.externalId) tags.push(`[circleback:${m.externalId}]`)
+    if (m.externalId) tags.push(meetingTaskTag(m.externalId))
   })
   return tasks
     .filter(t => t.status !== 'done' && (
@@ -338,8 +344,8 @@ const needsNotes = (c) => c.networkLabel !== 'personal' && (
 )
 
 // Meetings on your calendar with a lead, client or partner that ended over
-// two hours ago (time for Circleback to deliver) with no notes from
-// Circleback or by hand. Recurring meetings are skipped, so standing team
+// two hours ago (time for the notetaker to deliver) with no notes from
+// Circleback, Fathom or by hand. Recurring meetings are skipped, so standing team
 // syncs don't ask every week. Newest first.
 export function toLogItems(events = [], contacts = [], meetings = [], { dismissed = [], now = Date.now() } = {}) {
   const out = []

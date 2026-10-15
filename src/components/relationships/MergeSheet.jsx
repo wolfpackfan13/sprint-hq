@@ -96,7 +96,7 @@ export function MergeSheet({ contact, candidate, contacts, onMerge, onClose }) {
           <p><span className="text-navy-600">Name</span> <span className="font-semibold text-navy-900">{result.name}</span></p>
           <p><span className="text-navy-600">Emails</span> <span className="text-navy-900">{emailsOf(result).join(', ') || 'None'}</span></p>
           <p><span className="text-navy-600">Stage</span> <span className="text-navy-900">{STAGES[stageOf(result)].label}{ref ? ` · ${REFERRAL_STAGES[ref].label}` : ''}</span></p>
-          <p className="text-xs text-navy-600 pt-1">Meetings, email, tasks and referrals from both move to {result.name || 'this person'}. Gmail sync and Circleback match either address from now on.</p>
+          <p className="text-xs text-navy-600 pt-1">Meetings, email, tasks and referrals from both move to {result.name || 'this person'}. Gmail sync, Circleback and Fathom match either address from now on.</p>
         </div>
       </div>
     </Sheet>

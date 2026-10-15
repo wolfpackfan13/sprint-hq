@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { storage } from '../utils/storage'
 import { Eye, EyeOff, Check, CloudUpload, Link, Unlink, AlertCircle, RefreshCw } from 'lucide-react'
 import { ManageClients } from '../components/ManageClients'
 
@@ -58,6 +59,52 @@ function EmailSyncStatus({ google }) {
       </div>
       <p className={`text-xs mt-2 ${isError ? 'text-red-600' : 'text-navy-600'}`} aria-live="polite">{line}</p>
       {busy && <p className="text-xs text-navy-600 mt-1">The hourly sync is already running. Its result shows here when it finishes.</p>}
+    </div>
+  )
+}
+
+// Which notetakers SprintHQ takes calls from. Off means the meeting
+// processor ignores that notetaker's calls: no meeting, no tasks, no new
+// people. Which meetings a notetaker joins is set in the notetaker itself.
+const NOTETAKERS = [
+  { key: 'circleback', name: 'Circleback' },
+  { key: 'fathom', name: 'Fathom' },
+]
+
+// Kept in its own synced key, not in settings, so another device saving
+// its settings can't flip a switch back.
+function MeetingSources() {
+  const [sources, setSources] = useState(() => storage.get('meetingSources', null) || {})
+  useEffect(() => {
+    const onChange = (e) => { if (e.detail?.key === 'meetingSources') setSources(e.detail.next || {}) }
+    window.addEventListener('sprintHQ:changed', onChange)
+    return () => window.removeEventListener('sprintHQ:changed', onChange)
+  }, [])
+  const isOn = (k) => sources[k] !== false
+  const set = (k, on) => {
+    const next = { ...sources, [k]: on }
+    setSources(next)
+    storage.set('meetingSources', next)
+  }
+  return (
+    <div className="card p-5">
+      <p className="font-display font-semibold text-navy-900">Meeting notes</p>
+      <p className="text-xs text-navy-600 mt-0.5 leading-relaxed">
+        Calls from these notetakers become meetings, tasks and Needs review people. Turn one off and SprintHQ ignores its calls.
+        Which meetings each one joins is set in that notetaker. If both record the same call, it's saved once.
+      </p>
+      <div className="mt-3 divide-y divide-surface-200">
+        {NOTETAKERS.map(n => (
+          <label key={n.key} className="flex items-center justify-between gap-3 py-2.5 cursor-pointer min-h-[44px]">
+            <span className="text-sm font-medium text-navy-900">{n.name}</span>
+            <span className="flex items-center gap-2">
+              <span className="text-xs text-navy-600">{isOn(n.key) ? 'On' : 'Off'}</span>
+              <input type="checkbox" role="switch" aria-label={`Take calls from ${n.name}`} checked={isOn(n.key)}
+                onChange={e => set(n.key, e.target.checked)} className="w-4 h-4 accent-[#A86800]" />
+            </span>
+          </label>
+        ))}
+      </div>
     </div>
   )
 }
@@ -210,6 +257,9 @@ export function Settings({ settings, saveSettings, google, onBackup, companies, 
             </div>
           )}
         </div>
+
+        {/* Meeting notes: which notetakers SprintHQ takes calls from */}
+        <MeetingSources />
 
         {/* Demo mode: safe to screen-share Relationships with a client */}
         <div className="card p-5">
