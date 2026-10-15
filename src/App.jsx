@@ -47,6 +47,7 @@ import { ProjectDetail } from './views/ProjectDetail'
 import { useSync } from './hooks/useSync'
 import { Login } from './components/Login'
 import { SyncIndicator } from './components/SyncIndicator'
+import { SyncBanner } from './components/SyncBanner'
 import { SearchOverlay } from './components/SearchOverlay'
 import { GlobalTimer } from './components/GlobalTimer'
 import { genId as makeId } from './utils/ids'
@@ -633,6 +634,7 @@ function AppMain({ sync }) {
           onNewMeeting={() => setMeetingModal({ open: true, meeting: {} })} onBriefing={() => setActiveView('briefing')}
           syncStatus={sync.syncStatus} lastSynced={sync.lastSynced} userEmail={sync.userEmail} onSignOut={sync.signOut} onSearch={() => setSearchOpen(true)}
           timerSlot={<GlobalTimer timer={timer} tasks={tasks} companies={companies} projects={projects} onLogSession={logTimeSession} onLogManual={logManualSession} />} />
+        <SyncBanner syncError={sync.syncError} schemaGaps={sync.schemaGaps} pending={sync.pending} />
         <div className="flex-1 overflow-hidden pb-14 md:pb-0">{renderView()}</div>
       </div>
       <MobileNav activeView={effectiveView} setActiveView={setActiveView} missedCount={missedCount} />
