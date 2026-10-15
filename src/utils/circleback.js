@@ -249,3 +249,9 @@ export function draftFromCircleback(cb, { selfEmails = [] } = {}) {
 export function isCirclebackUrl(url) {
   return /circleback\.ai\/.*meetings\//i.test(String(url || ''))
 }
+
+// A Fathom call page (fathom.video/calls/…, fathom.video/share/…). The
+// meeting processor stores these for meetings Fathom recorded.
+export function isFathomUrl(url) {
+  return /^https:\/\/([a-z0-9-]+\.)?fathom\.(video|ai)\//i.test(String(url || ''))
+}

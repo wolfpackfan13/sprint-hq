@@ -180,7 +180,7 @@ export function ContactForm({ contact, defaultStage = 'nurturing', companies, co
             aria-invalid={!!otherDuplicate} aria-describedby={otherDuplicate ? 'cf-other-dup' : undefined} className={`${field} ${otherDuplicate ? 'border-red-400' : ''}`} />
           {otherDuplicate
             ? <p id="cf-other-dup" className="text-xs text-red-700 mt-1">{otherDuplicate.e} belongs to {otherDuplicate.c.name || 'another contact'}. Merge them from the contact page instead.</p>
-            : <p className="text-xs text-navy-500 mt-1">Gmail sync and Circleback match any of these.</p>}
+            : <p className="text-xs text-navy-500 mt-1">Gmail sync, Circleback and Fathom match any of these.</p>}
         </div>
 
         <div>

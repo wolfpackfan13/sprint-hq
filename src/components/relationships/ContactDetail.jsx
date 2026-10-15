@@ -10,7 +10,7 @@ import {
   gmailThreadUrl, gmailComposeUrl, historyItems, whoWroteLast, clientHistoryLabel, rewardsOwed, hasSigned,
   money, timeRange, fallbackStep, fallbackSummary, lastTouch, emailsOf, shortDay, lower, sameTaskTitle, notesOf, daysBetween,
 } from '../../utils/relationships'
-import { isCirclebackUrl } from '../../utils/circleback'
+import { isCirclebackUrl, isFathomUrl } from '../../utils/circleback'
 import { safeUrl } from '../../utils/safeUrl'
 import { dateUtils, calUtils } from '../../utils/dateUtils'
 import { genId } from '../../utils/ids'
@@ -24,18 +24,19 @@ const caret = { backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://
 function SourceTag({ kind, meeting }) {
   if (kind === 'email') return <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded bg-[#E8F0FE] text-[#1D4ED8]">Email</span>
   if (meeting?.source === 'circleback') return <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded bg-[#FDECE6] text-[#A3360F]">Circleback</span>
+  if (meeting?.source === 'fathom') return <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded bg-[#E9E7FB] text-[#4B3FB0]">Fathom</span>
   return <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded bg-surface-200 text-navy-600">Logged</span>
 }
 
-// Circleback imports link to the meeting page (notes, transcript, recording);
-// anything else is a recording.
+// Circleback and Fathom meetings link to the notetaker's page (notes,
+// transcript, recording); anything else is a recording.
 function MeetingLink({ url }) {
   const href = safeUrl(url)
   if (!url || href === '#') return null
-  const circleback = isCirclebackUrl(url)
+  const notetaker = isCirclebackUrl(url) ? 'Circleback' : isFathomUrl(url) ? 'Fathom' : ''
   return (
     <a href={href} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[13px] font-medium text-blue-700 flex-shrink-0 min-h-[32px]">
-      {circleback ? <><ExternalLink size={13} /> Circleback</> : <><PlayCircle size={14} /> Recording</>}
+      {notetaker ? <><ExternalLink size={13} /> {notetaker}</> : <><PlayCircle size={14} /> Recording</>}
     </a>
   )
 }
@@ -438,7 +439,7 @@ function NextStepCard({
         <>
           <h2 className="font-display font-bold text-navy-900 text-xl md:text-[22px] leading-snug">Add notes from {current.item.title ? `"${current.item.title}"` : 'your meeting'}</h2>
           <p className="text-sm text-navy-700 leading-relaxed">
-            {dateUtils.format(current.item.day, 'long')}{timeRange(current.item.start, current.item.end) ? ` · ${timeRange(current.item.start, current.item.end)}` : ''}. No Circleback recording or notes came in for it.
+            {dateUtils.format(current.item.day, 'long')}{timeRange(current.item.start, current.item.end) ? ` · ${timeRange(current.item.start, current.item.end)}` : ''}. No recording or notes came in for it.
           </p>
           <div className="flex gap-2 pt-0.5">
             <button onClick={() => onLog({ date: current.item.day, title: current.item.title, calendarEventId: current.item.eventId, contactIds: current.item.contactIds })} className={`${btnPrimary} flex-[3]`}><PenLine size={15} />Log it</button>

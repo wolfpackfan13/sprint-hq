@@ -204,7 +204,7 @@ export function ReviewSheet({
             </button>
           </div>
           {(note || confirmDelete) && (
-            <p className="text-xs text-navy-600">{confirmDelete ? 'Deleted people are also ignored, so Gmail and Circleback don\'t add them back.' : note}</p>
+            <p className="text-xs text-navy-600">{confirmDelete ? 'Deleted people are also ignored, so Gmail, Circleback and Fathom don\'t add them back.' : note}</p>
           )}
         </div>
       }

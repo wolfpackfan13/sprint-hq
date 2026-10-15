@@ -1,35 +1,51 @@
-// Circleback -> Sprint HQ meeting processor.
+// Meeting notes -> Sprint HQ processor, for Circleback and Fathom.
 //
-// Deployed as edge function `circleback-meeting-processor`, called by the
-// Circleback webhook after every recorded call. For each meeting it:
+// Deployed as edge function `circleback-meeting-processor` (the name stayed
+// when Fathom was added, so Circleback's webhook URL didn't have to change).
+// Both notetakers post here after every recorded call. For each meeting it:
 //
 //   1. matches attendees to contacts by email (then by exact full name), and
 //      adds anyone new to Needs review with a suggested stage
-//   2. writes one meeting row per Circleback id: plain-text notes, a
-//      two-sentence summary, the Circleback link, and everyone matched
+//   2. writes one meeting row per recording: plain-text notes, a
+//      two-sentence summary, the link back to the notetaker, and everyone
+//      matched
 //   3. sets a contact's next touch when the call names a follow-up, unless
 //      a next touch is already set for a later date
-//   4. creates the tasks the call produced, tagged [circleback:<id>]
+//   4. creates the tasks the call produced, tagged [circleback:<id>] or
+//      [fathom:<recording id>]
 //   5. parks a follow-up email on the ledger for the Gmail draft pass
 //
 // Before asking Claude, it reads what SprintHQ already knows about each
 // attendee (their Profile and last two meeting summaries) so the
 // relationship call and the email are grounded in history.
 //
-// Requests are verified with Circleback's signing secret (x-signature,
-// HMAC-SHA256 of the raw body). A caller without a signature, such as a
+// Which notetaker sent a request is told by the payload: Fathom's carries a
+// numeric recording_id, Circleback's doesn't. Fathom signs with Standard
+// Webhooks headers (webhook-id, webhook-timestamp, webhook-signature) and
+// nothing unsigned is accepted for it; Circleback signs with x-signature,
+// an HMAC-SHA256 of the raw body. A caller without a signature, such as a
 // scheduled task, can send the admin secret instead.
 //
-// Idempotency lives in the circleback_processed ledger. The meeting is
-// CLAIMED before any work happens, so a retry that arrives while the first
-// invocation is still talking to Claude is turned away. The contact and
-// meeting writes are safe to repeat, and tasks are written last, so a run
-// that fails part-way can be retried without duplicating tasks.
+// Deploy with Verify JWT OFF. Neither notetaker can send a Supabase JWT, so
+// with it on the gateway refuses every delivery before this code runs.
+//
+// Each notetaker can be switched off in SprintHQ Settings (Meeting notes,
+// stored in app_state key meetingSources). A switched-off source is answered
+// 200 and ignored. If both notetakers recorded the same call, the second
+// one to arrive is skipped, so the call is saved once and its tasks are
+// created once.
+//
+// Idempotency lives in the circleback_processed ledger (Fathom rows are
+// keyed fathom:<recording id>). The meeting is CLAIMED before any work
+// happens, so a retry that arrives while the first invocation is still
+// talking to Claude is turned away. The contact and meeting writes are safe
+// to repeat, and tasks are written last, so a run that fails part-way can be
+// retried without duplicating tasks.
 //
 // Every "already handled" path returns 200. A webhook that gets a non-2xx
 // retries, and a retry is exactly what we are trying to stop.
 //
-// Requires migrations 002, 003, 004 and 005.
+// Requires migrations 002, 003, 004, 005 and 008.
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
@@ -47,6 +63,22 @@ const ADMIN_SECRET = Deno.env.get("CIRCLEBACK_ADMIN_SECRET") ?? ""
 // every meeting request must carry a valid x-signature or the admin secret.
 // Unset = requests are accepted unverified, as before, with a warning.
 const SIGNING_SECRET = Deno.env.get("CIRCLEBACK_SIGNING_SECRET") ?? ""
+
+// The secret Fathom shows when the webhook is added (starts whsec_). Unlike
+// Circleback's, there is no unverified mode: until this is set, Fathom
+// deliveries are refused.
+const FATHOM_SECRET = Deno.env.get("FATHOM_WEBHOOK_SECRET") ?? ""
+// A signed Fathom delivery older or newer than this is refused, so a
+// captured request can't be replayed later.
+const FATHOM_TOLERANCE_S = 5 * 60
+
+type Source = "circleback" | "fathom"
+const SOURCE_LABEL: Record<Source, string> = { circleback: "Circleback", fathom: "Fathom" }
+
+// Two recordings of the same call start within this many minutes of each
+// other. Used to spot a call both notetakers recorded. Kept tight so
+// back-to-back calls with the same person are never taken for one call.
+const SAME_CALL_MINUTES = 10
 
 // Dates and times are written in Sam's time zone, so a 9pm call is not
 // filed under tomorrow.
@@ -119,19 +151,20 @@ const STAGE_FROM_RELATIONSHIP: Record<string, { stage: string; label: string | n
   vendor:               { stage: "network",         label: null },
 }
 
-const SYSTEM_PROMPT = `
-You are Sam Blinson's chief of staff. Sam just finished a call (captured by Circleback). Do SEVEN jobs and return ONLY valid JSON — no markdown fences, no preamble.
+const systemPrompt = (source: string) => `
+You are Sam Blinson's chief of staff. Sam just finished a call (recorded by ${source}, his meeting notetaker). Do SEVEN jobs and return ONLY valid JSON — no markdown fences, no preamble.
 
-Sam is a strategy consultant / operator. Circleback already captured some action items (provided, with assignees).
+Sam is a strategy consultant / operator. The notetaker's notes, action items (with assignees, when it produced any) and the transcript are provided.
 
 JOB 1 — FINAL TASK LIST (for Sprint HQ):
 The list Sam has to work from. Keep it to what the call actually produced.
-- Include every Circleback action item assigned to Sam, rephrased as a clear verb-first task. Do NOT include items assigned to other people.
-- Include a commitment Sam made in the notes that Circleback missed.
+- Include every notetaker action item assigned to Sam, rephrased as a clear verb-first task. Do NOT include items assigned to other people.
+- Include a commitment Sam made on the call that the notetaker missed. When the notetaker gave no action items, read the notes and transcript for what Sam said he would do.
 - You may add AT MOST 2 follow-ups that were not stated, and only where the call clearly implies one and leaving it out would drop the ball. A decision that has to be made, a real blocker, a hard deadline. Set "inferred": true on those.
 - Do NOT pad. Do NOT invent CRM hygiene, "log this", "create a record", "define criteria", "identify the contact", or generic relationship-management busywork. If the call produced three tasks, return three tasks.
 There is no minimum. The ceiling is 8. Fewer is better.
 Rules: concrete and executable, verb-first titles. priority: "high" = do this week, "medium" = this sprint, "low" = later. due_date = "YYYY-MM-DD" computed relative to the TODAY value provided, or null.
+For each task that was said out loud, give said_at, the transcript timestamp (HH:MM:SS) where Sam committed to it, and quote, the words that show it (under 20 words, copied from the transcript). Use null and "" when the transcript has no timestamps or the task was inferred.
 
 JOB 2 — RELATIONSHIP EVALUATION:
 Using the attendees and the PEOPLE ON THIS CALL section (what Sam's records already say about each person), classify the relationship and therefore the right follow-up email type. Choose exactly one type: "warm_existing_client" | "new_prospect" | "peer_partner" | "vendor" | "internal_team". Give a one-line rationale.
@@ -162,7 +195,7 @@ Only where the call explicitly names when Sam and a specific attendee will next 
 
 Return ONLY this JSON shape:
 {
-  "tasks": [ { "title": "", "notes": "", "priority": "high|medium|low", "due_date": "YYYY-MM-DD or null", "inferred": false } ],
+  "tasks": [ { "title": "", "notes": "", "priority": "high|medium|low", "due_date": "YYYY-MM-DD or null", "inferred": false, "said_at": "HH:MM:SS or null", "quote": "" } ],
   "relationship": { "type": "", "rationale": "" },
   "email": { "subject": "", "body": "" },
   "company_id": "<id or null>",
@@ -223,6 +256,69 @@ async function validSignature(req: Request, body: ArrayBuffer): Promise<boolean>
 
 const hasAdminSecret = (payload: any) =>
   !!ADMIN_SECRET && typeof payload?.secret === "string" && safeEqual(payload.secret, ADMIN_SECRET)
+
+// Fathom signs with the Standard Webhooks scheme: HMAC-SHA256, keyed with
+// the base64 part of the whsec_ secret, over "<webhook-id>.<webhook-timestamp>.<raw body>".
+// webhook-signature holds one or more space-separated "v1,<base64>" values.
+function base64ToBytes(s: string): ArrayBuffer {
+  const bin = atob(s)
+  const out = new Uint8Array(bin.length)
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i)
+  return out.buffer
+}
+
+function bytesToBase64(buf: ArrayBuffer): string {
+  let bin = ""
+  for (const b of new Uint8Array(buf)) bin += String.fromCharCode(b)
+  return btoa(bin)
+}
+
+async function validFathomSignature(req: Request, body: ArrayBuffer): Promise<boolean> {
+  const id = req.headers.get("webhook-id") ?? ""
+  const ts = req.headers.get("webhook-timestamp") ?? ""
+  const header = req.headers.get("webhook-signature") ?? ""
+  if (!FATHOM_SECRET || !id || !ts || !header) return false
+  const sent = Number(ts)
+  if (!Number.isFinite(sent) || Math.abs(Date.now() / 1000 - sent) > FATHOM_TOLERANCE_S) return false
+
+  let key: CryptoKey
+  try {
+    const keyBytes = base64ToBytes(FATHOM_SECRET.trim().replace(/^whsec_/, ""))
+    if (keyBytes.byteLength === 0) throw new Error("empty secret")
+    key = await crypto.subtle.importKey("raw", keyBytes, { name: "HMAC", hash: "SHA-256" }, false, ["sign"])
+  } catch {
+    console.error("circleback-meeting-processor: FATHOM_WEBHOOK_SECRET is not a valid whsec_ secret")
+    return false
+  }
+  const prefix = new TextEncoder().encode(`${id}.${ts}.`)
+  const signed = new Uint8Array(prefix.length + body.byteLength)
+  signed.set(prefix, 0)
+  signed.set(new Uint8Array(body), prefix.length)
+  const expected = bytesToBase64(await crypto.subtle.sign("HMAC", key, signed))
+
+  return header.split(" ").filter(Boolean)
+    .map((s) => (s.includes(",") ? s.slice(s.indexOf(",") + 1) : s))
+    .some((s) => safeEqual(s, expected))
+}
+
+// Fathom's meeting object has recording_id, calendar_invitees, recorded_by
+// and share_url; Circleback's has none of them. Routing
+// on the payload, not the headers, means a Circleback delivery can never be
+// sent down the Fathom path by a header it happens to carry, and anything
+// shaped like a Fathom meeting must pass Fathom's signature check.
+function sourceOf(payload: any): Source {
+  const m = payload?.meeting ?? payload?.data ?? payload ?? {}
+  if (lower(payload?.source) === "fathom") return "fathom"
+  // Any of Fathom's own field names, even empty, means a Fathom meeting.
+  if (m && typeof m === "object" && ["recording_id", "calendar_invitees", "recorded_by", "share_url"].some((k) => k in m)) return "fathom"
+  return "circleback"
+}
+
+// The tag a task carries so the app can tie it back to its meeting.
+// Circleback ids are bare; Fathom ids already start with "fathom:".
+const meetingTag = (linkId: string) => (linkId.startsWith("fathom:") ? `[${linkId}]` : `[circleback:${linkId}]`)
+const sourceOfExternalId = (id: string | null): Source | "" =>
+  !id ? "" : id.startsWith("fathom:") ? "fathom" : /^[a-z_]+:/i.test(id) ? "" : "circleback"
 
 // ── Circleback notes (same rules as src/utils/circleback.js) ─────
 function stripInline(s: string) {
@@ -285,41 +381,151 @@ function overviewOf(markdown: string) {
 
 // ── Payload ───────────────────────────────────────────────────
 type Attendee = { name: string; email: string }
+type ActionItem = { title: string; description: string; assignee: { name: string; email: string } | null; done: boolean; at: string }
 
-// The webhook posts Circleback's own shape (id, name, createdAt, notes,
-// attendees, actionItems, transcript as segments). A scheduled task may
-// wrap it as { meeting: {...} }. Accept either.
-function readMeeting(payload: any) {
+// One shape for both notetakers, so everything after reading the payload
+// works the same whichever one sent it.
+type Meeting = {
+  source: Source
+  linkId: string          // ledger key and meetings.external_id
+  title: string
+  date: string            // YYYY-MM-DD, Sam's time zone
+  time: string            // HH:MM, Sam's time zone
+  notesMarkdown: string
+  transcript: string
+  actionItems: ActionItem[]
+  attendees: Attendee[]
+  meetingUrl: string
+}
+
+const clipTranscript = (t: string) =>
+  t.length > TRANSCRIPT_CHAR_LIMIT ? t.slice(0, TRANSCRIPT_CHAR_LIMIT) + "\n[transcript truncated]" : t
+
+// Seconds (Circleback) or "HH:MM:SS" (Fathom) to "HH:MM:SS".
+function clockOf(v: unknown): string {
+  if (typeof v === "string" && /^\d{1,2}:\d{2}(:\d{2})?$/.test(v.trim())) return v.trim()
+  const n = typeof v === "number" ? v : Number.NaN
+  if (!Number.isFinite(n) || n < 0) return ""
+  const s = Math.floor(n)
+  const pad = (x: number) => String(x).padStart(2, "0")
+  return `${pad(Math.floor(s / 3600))}:${pad(Math.floor((s % 3600) / 60))}:${pad(s % 60)}`
+}
+
+function assigneeOf(a: any): ActionItem["assignee"] {
+  if (!a) return null
+  if (typeof a === "string") return a.trim() ? { name: a.trim(), email: "" } : null
+  const name = str(a.name).trim()
+  const email = lower(a.email)
+  return name || email ? { name, email } : null
+}
+
+// Circleback posts its own shape (id, name, createdAt, notes, attendees,
+// actionItems, transcript as segments). A scheduled task may wrap it as
+// { meeting: {...} }. Accept either.
+function readCircleback(payload: any): Meeting {
   const m = payload.meeting ?? payload.data ?? payload ?? {}
   const linkId = str(m.linkId ?? m.link_id ?? m.id ?? m.meetingId ?? payload.id).trim()
   const started = localParts(m.createdAt ?? m.created_at ?? m.startedAt ?? null)
   const date = ISO_DATE.test(str(m.date)) ? str(m.date) : started.date || localParts(nowIso()).date
 
-  const transcriptRaw = Array.isArray(m.transcript)
-    ? m.transcript.map((s: any) => `${str(s?.speaker) || "?"}: ${str(s?.text)}`).join("\n")
+  const transcript = Array.isArray(m.transcript)
+    ? m.transcript.map((s: any) => {
+        const at = clockOf(s?.timestamp ?? s?.start ?? s?.startTime)
+        return `${at ? `[${at}] ` : ""}${str(s?.speaker) || "?"}: ${str(s?.text)}`
+      }).join("\n")
     : str(m.transcript)
-  const transcript = transcriptRaw.length > TRANSCRIPT_CHAR_LIMIT
-    ? transcriptRaw.slice(0, TRANSCRIPT_CHAR_LIMIT) + "\n[transcript truncated]"
-    : transcriptRaw
 
   const attendees: Attendee[] = arr(payload.attendees ?? m.attendees)
     .map((a: any) => ({ name: str(a?.name).trim(), email: lower(a?.email) }))
     .filter((a) => a.name || a.email)
 
   return {
+    source: "circleback",
     linkId,
     title: str(m.title ?? m.name).trim() || "Untitled meeting",
     date,
     time: started.time,
     notesMarkdown: str(m.notes),
-    transcript,
-    actionItems: arr(m.action_items ?? m.actionItems),
+    transcript: clipTranscript(transcript),
+    actionItems: arr(m.action_items ?? m.actionItems).map((i: any) => ({
+      title: str(i?.title).trim(),
+      description: str(i?.description).trim(),
+      assignee: assigneeOf(i?.assignee),
+      done: lower(i?.status) === "done" || i?.done === true,
+      at: "",
+    })).filter((i) => i.title),
     attendees,
     // Circleback's recordingUrl is a file link that expires after 24 hours,
     // so the meeting page is what gets stored.
     meetingUrl: CIRCLEBACK_ID.test(linkId) ? `https://circleback.ai/meetings/${linkId}` : "",
   }
 }
+
+// Only Fathom's own pages are stored as the meeting link.
+function fathomUrl(...candidates: unknown[]): string {
+  for (const c of candidates) {
+    try {
+      const u = new URL(str(c))
+      const host = u.hostname.toLowerCase()
+      if (u.protocol === "https:" && (host === "fathom.video" || host.endsWith(".fathom.video") || host === "fathom.ai" || host.endsWith(".fathom.ai"))) {
+        return u.toString()
+      }
+    } catch { /* not a URL */ }
+  }
+  return ""
+}
+
+// Fathom's "new meeting content ready" webhook posts its Meeting object:
+// recording_id, meeting_title, recording/scheduled times, calendar_invitees,
+// recorded_by, and (when the webhook includes them) default_summary,
+// action_items and transcript. The summary can be thin or missing on
+// Fathom's free plan; the transcript is always there, and Claude works from
+// it.
+function readFathom(payload: any): Meeting {
+  const m = payload.meeting ?? payload.data ?? payload ?? {}
+  const recordingId = str(m.recording_id).trim()
+  const linkId = /^\d{1,20}$/.test(recordingId) ? `fathom:${recordingId}` : ""
+  const started = localParts(m.recording_start_time ?? m.scheduled_start_time ?? m.created_at ?? null)
+
+  const transcript = arr(m.transcript).map((s: any) => {
+    const at = clockOf(s?.timestamp)
+    const sp = s?.speaker
+    const who = (typeof sp === "string" ? sp : str(sp?.display_name)).trim() || "?"
+    return `${at ? `[${at}] ` : ""}${who}: ${str(s?.text)}`
+  }).join("\n")
+
+  const attendees: Attendee[] = arr(m.calendar_invitees)
+    .map((a: any) => ({ name: str(a?.name).trim(), email: lower(a?.email) }))
+    .filter((a) => a.name || a.email)
+  // A meeting someone else recorded and shared: the recorder may not be on
+  // the invite list.
+  const by = m.recorded_by
+  if (by && lower(by.email) && !attendees.some((a) => a.email === lower(by.email))) {
+    attendees.push({ name: str(by.name).trim(), email: lower(by.email) })
+  }
+
+  return {
+    source: "fathom",
+    linkId,
+    title: str(m.meeting_title).trim() || str(m.title).trim() || "Untitled meeting",
+    date: started.date || localParts(nowIso()).date,
+    time: started.time,
+    notesMarkdown: str(m.default_summary?.markdown_formatted),
+    transcript: clipTranscript(transcript),
+    actionItems: arr(m.action_items).map((i: any) => ({
+      title: str(i?.description).trim(),
+      description: "",
+      assignee: assigneeOf(i?.assignee),
+      done: i?.completed === true,
+      at: clockOf(i?.recording_timestamp),
+    })).filter((i) => i.title),
+    attendees,
+    meetingUrl: fathomUrl(m.url, m.share_url),
+  }
+}
+
+const readMeeting = (source: Source, payload: any): Meeting =>
+  source === "fathom" ? readFathom(payload) : readCircleback(payload)
 
 // ── Contacts ──────────────────────────────────────────────────
 type ContactRow = {
@@ -336,8 +542,9 @@ const emailsOf = (c: ContactRow) => [...new Set([lower(c.email), ...arr(c.other_
 
 type MeetingRow = {
   id: string; external_id: string | null; title: string | null; date: string | null
-  summary: string | null; notes: string | null; contact_ids: unknown; attendees: string | null
+  time?: string | null; summary: string | null; notes: string | null; contact_ids: unknown; attendees: string | null
 }
+const MEETING_COLUMNS = "id, external_id, title, date, time, summary, notes, contact_ids, attendees"
 
 // Same rule as meetingMatchesContact in src/utils/relationships.js: listed
 // in contact_ids, or (older meetings) the attendee text has their email.
@@ -468,20 +675,79 @@ async function saveMeeting(sb: any, userId: string, row: Record<string, any>) {
   return { id: existing.id as string, created: false }
 }
 
+// ── Same call, other notetaker ────────────────────────────────
+// If Circleback and Fathom both recorded a call, the first delivery saves
+// it and the second is skipped, so the call isn't saved twice and its
+// tasks aren't created twice. A wrong match would drop a real call
+// silently, so the test is strict: a missed match only costs a duplicate.
+const normTitle = (s: unknown) => lower(s).replace(/[^a-z0-9]+/g, " ").trim()
+// Titles a notetaker or calendar gives any call; they say nothing about
+// which call it was.
+const GENERIC_TITLE = /^(untitled( meeting)?|impromptu .*|.*personal meeting room|(zoom|google meet|meet|teams|microsoft teams|webex) (meeting|call)|meeting|call|sync|check in|catch up|1 1|one on one)$/
+const addressesIn = (text: unknown) =>
+  new Set(str(text).toLowerCase().split(/[\s,;<>()"]+/).filter((w) => w.includes("@")))
+// Minutes on one clock for date + HH:MM, so calls either side of midnight
+// still compare.
+function startMinute(date: unknown, time: unknown): number | null {
+  if (!ISO_DATE.test(str(date)) || !/^\d{2}:\d{2}$/.test(str(time))) return null
+  const ms = Date.parse(`${str(date)}T${str(time)}:00Z`)
+  return Number.isFinite(ms) ? ms / 60000 : null
+}
+function addDays(date: string, n: number): string {
+  const d = new Date(`${date}T12:00:00Z`)
+  d.setUTCDate(d.getUTCDate() + n)
+  return d.toISOString().slice(0, 10)
+}
+
+// A meeting from the OTHER notetaker that started within SAME_CALL_MINUTES
+// of this one AND shares someone besides Sam, or carries the same specific
+// title. No start time on either side means no match. Two recordings from
+// the same notetaker are always two calls.
+function isSameCall(row: MeetingRow, mtg: Meeting): boolean {
+  const other = sourceOfExternalId(row.external_id)
+  if (!other || other === mtg.source) return false
+  const a = startMinute(row.date, row.time)
+  const b = startMinute(mtg.date, mtg.time)
+  if (a == null || b == null || Math.abs(a - b) > SAME_CALL_MINUTES) return false
+  const title = normTitle(mtg.title)
+  if (title && title === normTitle(row.title) && !GENERIC_TITLE.test(title)) return true
+  const self = new Set(SELF_ADDRESSES)
+  const theirs = addressesIn(row.attendees)
+  return mtg.attendees.some((x) => x.email && !self.has(x.email) && theirs.has(x.email))
+}
+
+// Only a twin the processor saved and finished (or is finishing) counts. A
+// twin whose run failed may never come back, and a meeting saved by hand
+// from a pasted link never had its tasks made here, so neither stops this
+// delivery.
+async function findSameCall(sb: any, userId: string, mtg: Meeting): Promise<(MeetingRow & { ledger_status: string }) | null> {
+  const { data, error } = await sb.from("meetings").select(MEETING_COLUMNS)
+    .eq("user_id", userId).in("date", [addDays(mtg.date, -1), mtg.date, addDays(mtg.date, 1)])
+    .not("external_id", "is", null)
+  if (error) throw new Error(`same-call lookup failed: ${error.message}`)
+  const candidates = ((data ?? []) as MeetingRow[]).filter((r) => isSameCall(r, mtg))
+  if (!candidates.length) return null
+  const { data: ledger, error: ledgerErr } = await sb.from("circleback_processed").select("link_id, status")
+    .eq("user_id", userId).in("link_id", candidates.map((r) => r.external_id))
+  if (ledgerErr) throw new Error(`same-call lookup failed: ${ledgerErr.message}`)
+  const status = new Map(((ledger ?? []) as { link_id: string; status: string }[]).map((l) => [l.link_id, l.status]))
+  const twin = candidates.find((r) => ["done", "processing"].includes(status.get(r.external_id!) ?? ""))
+  return twin ? { ...twin, ledger_status: status.get(twin.external_id!)! } : null
+}
+
 // Action items in the app's shape. Sam's read as-is; everyone else's are
 // prefixed with their first name so the list says who owes what.
-function appActionItems(items: any[]) {
+function appActionItems(items: ActionItem[]) {
   const self = new Set(SELF_ADDRESSES)
   return items.map((ai) => {
-    const email = lower(ai?.assignee?.email)
-    const mine = !ai?.assignee || (email && self.has(email))
+    const email = lower(ai.assignee?.email)
+    const mine = !ai.assignee || (email && self.has(email))
     const owner = mine ? "" : firstName(str(ai.assignee?.name)) || email
-    const title = str(ai?.title).trim()
     return {
       id: `ai_${uuid()}`,
-      title: owner ? `${owner}: ${title}` : title,
+      title: owner ? `${owner}: ${ai.title}` : ai.title,
       dueDate: null,
-      done: lower(ai?.status) === "done" || ai?.done === true,
+      done: ai.done,
       taskId: null,
     }
   }).filter((ai) => ai.title)
@@ -512,6 +778,15 @@ function primaryCounterpart(attendees: Attendee[]): string | null {
     if (a.email && !SELF_ADDRESSES.includes(a.email)) return a.email
   }
   return null
+}
+
+// "Said at 00:12:31: "I'll send the deck Friday"", so a task can be checked
+// against the recording in seconds. Empty when Claude gave no timestamp.
+function saidAt(t: any): string {
+  const at = clockOf(t?.said_at)
+  if (!at) return ""
+  const quote = clip(str(t?.quote).trim().replace(/\s+/g, " "), 160)
+  return quote ? `Said at ${at}: "${quote}"` : `Said at ${at}`
 }
 
 function parseClaudeJson(text: string) {
@@ -565,20 +840,49 @@ serve(async (req: Request) => {
     }
 
     // ── Who is calling ──────────────────────────────────────────
-    // Circleback signs with the automation's signing secret; a scheduled
-    // task can send the admin secret instead. Until the signing secret is
-    // set, requests are accepted as before so nothing breaks on deploy.
-    const signed = await validSignature(req, body)
+    // Fathom signs every delivery and nothing unsigned is accepted for it.
+    // Circleback signs with the automation's signing secret; until that
+    // secret is set, its requests are accepted as before so nothing breaks
+    // on deploy. Either way, a scheduled task can send the admin secret.
+    const source = sourceOf(payload)
+    const label = SOURCE_LABEL[source]
     const admin = hasAdminSecret(payload)
-    if (SIGNING_SECRET && !signed && !admin) {
-      return json({ error: "unauthorized: missing or invalid x-signature" }, 401)
+    const signed = source === "fathom" ? await validFathomSignature(req, body) : await validSignature(req, body)
+    if (source === "fathom") {
+      if (!signed && !admin) {
+        return json({
+          error: FATHOM_SECRET
+            ? "unauthorized: missing, stale or invalid Fathom signature"
+            : "unauthorized: FATHOM_WEBHOOK_SECRET is not set, so Fathom deliveries are refused",
+        }, 401)
+      }
+    } else {
+      if (SIGNING_SECRET && !signed && !admin) {
+        return json({ error: "unauthorized: missing or invalid x-signature" }, 401)
+      }
+      if (!SIGNING_SECRET && !admin) {
+        console.warn("circleback-meeting-processor: CIRCLEBACK_SIGNING_SECRET is not set; request accepted unverified")
+      }
     }
-    if (!SIGNING_SECRET && !admin) {
-      console.warn("circleback-meeting-processor: CIRCLEBACK_SIGNING_SECRET is not set; request accepted unverified")
+
+    // ── Switched off in Settings ────────────────────────────────
+    // Meeting notes in SprintHQ Settings can turn either notetaker off. The
+    // switches live in their own app_state key, which only the switches
+    // write, so another device saving its settings can't turn one back on.
+    // A switched-off notetaker's deliveries are answered 200 and ignored,
+    // so it doesn't retry, and nothing is claimed, so turning it back on
+    // later works.
+    const stateRes = await sb.from("app_state").select("key, value")
+      .eq("user_id", userId).in("key", ["settings", "meetingSources"])
+    if (stateRes.error) throw new Error(`read failed: ${stateRes.error.message}`)
+    const stateOf = (k: string) => ((stateRes.data ?? []) as { key: string; value: any }[]).find((r) => r.key === k)?.value ?? {}
+    const settings = stateOf("settings")
+    if (stateOf("meetingSources")?.[source] === false) {
+      return json({ ok: true, skipped: "source_off", source })
     }
 
     // ── Normal webhook path ─────────────────────────────────────
-    const mtg = readMeeting(payload)
+    const mtg = readMeeting(source, payload)
     const linkId = mtg.linkId
 
     // Without a linkId there is no dedup key, and an untagged batch can never
@@ -588,12 +892,25 @@ serve(async (req: Request) => {
     if (!linkId) {
       const m = payload.meeting ?? payload.data ?? payload ?? {}
       return json({
-        error: "missing linkId",
-        hint: "no linkId/link_id/id found on payload.meeting, payload.data, or payload",
+        error: source === "fathom" ? "missing recording_id" : "missing linkId",
+        hint: source === "fathom"
+          ? "no numeric recording_id found on payload.meeting, payload.data, or payload"
+          : "no linkId/link_id/id found on payload.meeting, payload.data, or payload",
         received_keys: Object.keys(payload ?? {}),
         meeting_keys: Object.keys(m ?? {}),
       }, 400)
     }
+
+    // A Circleback id is letters, digits, - and _. Anything else (such as a
+    // "fathom:" key) on the Circleback path, which may be unsigned, is
+    // refused, so it can't claim a Fathom recording's place in the ledger.
+    if (source === "circleback" && !CIRCLEBACK_ID.test(linkId) && !admin) {
+      return json({ error: "invalid Circleback meeting id", link_id: linkId }, 400)
+    }
+
+    // An admin request with force: true re-runs a call that was skipped as
+    // the same call as another notetaker's recording.
+    const force = admin && payload.force === true
 
     // The stored copy never keeps a secret a caller sent.
     const { secret: _secret, ...storedPayload } = payload
@@ -621,12 +938,14 @@ serve(async (req: Request) => {
 
       const age = existing?.processed_at ? Date.now() - Date.parse(existing.processed_at) : Infinity
       const takeable = existing?.status === "failed" ||
-                       (existing?.status === "processing" && age > STALE_CLAIM_MS)
+                       (existing?.status === "processing" && age > STALE_CLAIM_MS) ||
+                       (force && existing?.status === "duplicate")
 
       if (!takeable) {
         // Already done, or in flight right now. 200 so the webhook stops retrying.
         return json({
-          ok: true, skipped: existing?.status === "done" ? "already_processed" : "in_flight",
+          ok: true,
+          skipped: existing?.status === "done" ? "already_processed" : existing?.status === "duplicate" ? "same_call" : "in_flight",
           link_id: linkId, tasks_created: 0,
           previously_created: existing?.tasks_created ?? 0,
         })
@@ -650,22 +969,34 @@ serve(async (req: Request) => {
     const today = ISO_DATE.test(str(payload.today)) ? str(payload.today) : localParts(nowIso()).date
     const dryRun = payload.dry_run === true
 
+    // ── Already saved by the other notetaker? ───────────────────
+    // Checked before Claude is asked, so a call both notetakers recorded
+    // costs one Claude call, not two.
+    const twin = force ? null : await findSameCall(sb, userId, mtg)
+    if (twin) {
+      if (dryRun) await releaseRow(sb, claimed)
+      else await release(sb, claimed, "duplicate")
+      return json({
+        ok: true, skipped: "same_call", source, link_id: linkId,
+        meeting_id: twin.id, saved_as: twin.external_id, tasks_created: 0,
+      })
+    }
+
     // ── What SprintHQ already knows ─────────────────────────────
-    const [contactsRes, settingsRes, meetingsRes, companiesRes] = await Promise.all([
+    const [contactsRes, meetingsRes, companiesRes] = await Promise.all([
       sb.from("contacts").select(CONTACT_COLUMNS).eq("user_id", userId),
-      sb.from("app_state").select("value").eq("user_id", userId).eq("key", "settings").maybeSingle(),
-      sb.from("meetings").select("id, external_id, title, date, summary, notes, contact_ids, attendees")
+      sb.from("meetings").select(MEETING_COLUMNS)
         .eq("user_id", userId).order("date", { ascending: false, nullsFirst: false }).limit(400),
       sb.from("companies").select("id, name").eq("user_id", userId),
     ])
-    for (const r of [contactsRes, settingsRes, meetingsRes, companiesRes]) {
+    for (const r of [contactsRes, meetingsRes, companiesRes]) {
       if (r.error) throw new Error(`read failed: ${r.error.message}`)
     }
     const contacts = (contactsRes.data ?? []) as ContactRow[]
     const recentMeetings = (meetingsRes.data ?? []) as MeetingRow[]
     const companyRows = (companiesRes.data ?? []) as { id: string; name: string }[]
     // "Not a contact" in the Needs review sheet adds the address here.
-    const ignore = new Set(arr(settingsRes.data?.value?.contactIgnore).map(lower).filter(Boolean))
+    const ignore = new Set(arr(settings?.contactIgnore).map(lower).filter(Boolean))
 
     const { matched, matchedEmail, newPeople: unknownPeople } = matchAttendees(mtg.attendees, contacts, ignore)
     const tooManyNew = unknownPeople.length > MAX_NEW_CONTACTS
@@ -683,7 +1014,8 @@ serve(async (req: Request) => {
     const contactCompany = matched.map((c) => valid(c.company_id)).find(Boolean) ?? null
     const matchedCompany = explicitCompany ?? addressCompany ?? contactCompany
 
-    const aiLines = mtg.actionItems.map((i: any) => `- [${str(i.assignee?.name ?? i.assignee) || "unassigned"}] ${str(i.title)}${i.description ? ": " + str(i.description) : ""}`)
+    const aiLines = mtg.actionItems.map((i) =>
+      `- [${i.assignee?.name || i.assignee?.email || "unassigned"}] ${i.title}${i.description ? ": " + i.description : ""}${i.at ? ` (at ${i.at})` : ""}`)
     const attLines = mtg.attendees.map((a) => `- ${a.name || "?"} (${a.email || "no email"})`)
 
     const userMessage = [
@@ -705,11 +1037,11 @@ serve(async (req: Request) => {
       "--- NEW PEOPLE (for JOB 6) ---",
       newPeople.length ? newPeople.map((p) => `- ${p.name || "(no name)"} <${p.email}>`).join("\n") : "None",
       "",
-      "--- CIRCLEBACK NOTES ---",
+      `--- ${label.toUpperCase()} NOTES ---`,
       mtg.notesMarkdown || "(none)",
       "",
-      "--- CIRCLEBACK ACTION ITEMS (with assignees) ---",
-      aiLines.length ? aiLines.join("\n") : "None",
+      `--- ${label.toUpperCase()} ACTION ITEMS (with assignees) ---`,
+      aiLines.length ? aiLines.join("\n") : "None (read the transcript for Sam's commitments)",
       "",
       mtg.transcript ? `--- FULL TRANSCRIPT ---\n${mtg.transcript}` : "",
     ].filter((l) => l !== null).join("\n").replace(/\n{3,}/g, "\n\n").trim()
@@ -717,7 +1049,7 @@ serve(async (req: Request) => {
     const claudeRes = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
-      body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: 6000, system: SYSTEM_PROMPT, messages: [{ role: "user", content: userMessage }] }),
+      body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: 6000, system: systemPrompt(label), messages: [{ role: "user", content: userMessage }] }),
     })
     const claudeData = await claudeRes.json().catch(() => ({}))
     const rawOutput: string = claudeData.content?.[0]?.text ?? ""
@@ -765,7 +1097,7 @@ serve(async (req: Request) => {
         stage: "needs_review",
         suggested_stage: stage,
         network_label: label,
-        source: "circleback",
+        source: mtg.source,
         source_ref: linkId,
         last_contact_date: mtg.date,
         tags: [],
@@ -792,6 +1124,17 @@ serve(async (req: Request) => {
     const insertedRows: any[] = []
 
     if (!dryRun) {
+      // The other notetaker may have saved this call while Claude was
+      // working on it. Look once more before writing anything.
+      const lateTwin = force ? null : await findSameCall(sb, userId, mtg)
+      if (lateTwin) {
+        await release(sb, claimed, "duplicate")
+        return json({
+          ok: true, skipped: "same_call", source, link_id: linkId,
+          meeting_id: lateTwin.id, saved_as: lateTwin.external_id, tasks_created: 0,
+        })
+      }
+
       // 1. Contacts. Safe to repeat: an address that exists is reused.
       const contactIdByEmail = new Map(matchedEmail)
       const meetingContactIds = matched.map((c) => c.id)
@@ -819,12 +1162,31 @@ serve(async (req: Request) => {
         external_id: linkId,
         summary,
         recording_url: mtg.meetingUrl,
-        source: "circleback",
+        source: mtg.source,
         created_at: nowIso(),
         updated_at: nowIso(),
       })
       crm.meeting = saved.created ? "created" : "updated"
       crm.meeting_id = saved.id
+
+      // Both notetakers' runs can reach this point at nearly the same
+      // moment, each before the other saved its meeting. Now that this one
+      // is saved, look again. A twin that already finished wins; between
+      // two runs still in flight, the lower recording key wins, and both
+      // runs apply the same rule, so exactly one goes on to make tasks.
+      if (!force) {
+        const raced = await findSameCall(sb, userId, mtg)
+        if (raced && (raced.ledger_status === "done" || str(raced.external_id) < linkId)) {
+          if (saved.created) {
+            await sb.from("meetings").delete().eq("user_id", userId).eq("id", saved.id)
+          }
+          await release(sb, claimed, "duplicate")
+          return json({
+            ok: true, skipped: "same_call", source, link_id: linkId,
+            meeting_id: raced.id, saved_as: raced.external_id, tasks_created: 0,
+          })
+        }
+      }
 
       // 3. Next touch from the call, saved as a suggested follow-up. One
       // already set for a later date is Sam's call and stays as it is, and
@@ -848,7 +1210,13 @@ serve(async (req: Request) => {
         const rows = tasks.map((t: any) => ({
           id: crypto.randomUUID(), user_id: userId,
           title: t.title,
-          notes: [t.notes ?? "", `From: ${mtg.title} (${mtg.date}) · Circleback`, mtg.meetingUrl, `[circleback:${linkId}]`].filter(Boolean).join("\n"),
+          notes: [
+            str(t.notes).trim(),
+            saidAt(t),
+            `From: ${mtg.title} (${mtg.date}) · ${label}`,
+            mtg.meetingUrl,
+            meetingTag(linkId),
+          ].filter(Boolean).join("\n"),
           company_id: companyId,
           status: "todo", priority: t.priority ?? "medium",
           due_date: (t.due_date && t.due_date !== "null" && ISO_DATE.test(str(t.due_date))) ? t.due_date : null,
@@ -880,7 +1248,7 @@ serve(async (req: Request) => {
     }
 
     return json({
-      ok: true, meeting: mtg.title, link_id: linkId, dry_run: dryRun,
+      ok: true, source, meeting: mtg.title, link_id: linkId, dry_run: dryRun,
       verified: signed ? "signature" : admin ? "admin_secret" : "unverified",
       tasks_created: tasksCreated,
       company_id: companyId,

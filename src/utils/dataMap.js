@@ -91,7 +91,9 @@ export const PULL_ONLY_TABLES = {
 }
 
 // Singleton state keys (stored in app_state table, key/value)
-export const SINGLETON_KEYS = ['sprint', 'vision', 'settings', 'invoiceProfile', 'eventNotes']
+// meetingSources holds the Meeting notes switches (Settings). It is its own
+// key so only the switches write it; the meeting processor reads it.
+export const SINGLETON_KEYS = ['sprint', 'vision', 'settings', 'invoiceProfile', 'eventNotes', 'meetingSources']
 
 // Fields that must never leave the device. These are live credentials:
 // an Anthropic API key (billable) and a Google OAuth access token carrying
