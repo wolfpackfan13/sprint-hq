@@ -17,8 +17,12 @@ const clip = (s, n) => {
 
 export function buildBrief(contact, { linkedMeetings = [], linkedThreads = [], openTasks = [], booked, referrals = [], referrer, company, dismissed = [] }) {
   const first = firstNameOf(contact)
+  const stamp = (d) => d.toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+  const bookedAt = booked?.start ? new Date(booked.start) : null
   return {
     today: calUtils.localToday(),
+    // The time matters: a meeting "today" may already be over.
+    now: stamp(new Date()),
     person: {
       name: contact.name || contact.email || '',
       role: contact.role || '',
@@ -36,7 +40,12 @@ export function buildBrief(contact, { linkedMeetings = [], linkedThreads = [], o
     samsOwnNextStep: contact.nextStep?.mine?.title ? { title: clip(contact.nextStep.mine.title, 160), by: contact.nextStep.mine.due || '' } : null,
     // Sam's own notes on them, newest first.
     notes: notesOf(contact).slice(0, 8).map(n => ({ date: localDateOf(n.at), text: clip(n.text, 400) })),
-    booked: booked ? { title: booked.title, start: booked.start, withThem: true } : null,
+    // Only meetings still ahead count as booked; ones already logged are in meetings.
+    booked: booked ? {
+      title: booked.title,
+      when: bookedAt && booked.start.includes('T') ? stamp(bookedAt) : booked.start,
+      startsInHours: bookedAt ? Math.round(((bookedAt.getTime() - Date.now()) / 3600000) * 10) / 10 : null,
+    } : null,
     meetings: linkedMeetings.slice(0, 6).map(m => ({
       date: m.date, title: clip(m.title, 120), source: m.source || 'manual',
       summary: clip(m.summary || m.notes, 700),
